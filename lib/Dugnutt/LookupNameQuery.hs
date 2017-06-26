@@ -30,3 +30,14 @@ instance Query LookupNameQuery where
     call (Yield q ans)
     return ()
 
+data FooQuery = FooQuery deriving Show
+
+instance Query FooQuery where
+  type Answer FooQuery = String
+  launch FooQuery = do
+    liftIO $ putStrLn "FooQuery start"
+    liftIO $ putStrLn "FooQuery forking"
+    b <- call Fork
+    liftIO $ putStrLn $ "FooQuery: b = " ++ show b
+    call $ Launch $ LookupNameQuery $ if b then "www.hawaga.org.uk" else "www.cqx.ltd.uk"
+    liftIO $ putStrLn "FooQuery finished"

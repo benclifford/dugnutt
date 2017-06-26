@@ -45,6 +45,8 @@ data DugnuttCommand v where
   --   type as with Yield.
   Launch :: Query q => q -> DugnuttCommand ()
 
+  Fork :: DugnuttCommand Bool
+
 -- | from okmij "Freer monads, More Extensible Effects",
 --   I've taken the freer monad stuff, but not the extensible
 --   effects stuff (mostly because I didn't want to spend
@@ -105,6 +107,13 @@ runAction (Impure (Launch q) k) = do
   putStrLn $ "Launch: query: " ++ show q
   nexts' <- runAction $ k ()
   return $ (L q) : nexts'
+
+runAction (Impure (Fork) k) = do
+  putStrLn "Forking: False-side"
+  nextsFalse <- runAction (k False)
+  putStrLn "Forking: True-side"
+  nextsTrue <- runAction (k True)
+  return $ nextsFalse ++ nextsTrue
 
 -- | drive something (an Action?) until there are no
 --   nexts left to do.
