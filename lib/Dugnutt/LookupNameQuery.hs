@@ -13,7 +13,7 @@ import Network.DNS as DNS
 -- in use in a regular app.
 data LookupNameQuery = LookupNameQuery {
     domain :: Domain
-  } deriving Show
+  } deriving (Eq, Show)
 
 instance Query LookupNameQuery where
   type Answer LookupNameQuery = Either DNSError [RData]
@@ -30,7 +30,7 @@ instance Query LookupNameQuery where
     call (Yield q ans)
     error "impossible: after Yield"
 
-data FooQuery = FooQuery deriving Show
+data FooQuery = FooQuery deriving (Eq, Show)
 
 instance Query FooQuery where
   type Answer FooQuery = String
@@ -39,5 +39,6 @@ instance Query FooQuery where
     liftIO $ putStrLn "FooQuery forking"
     b <- call Fork
     liftIO $ putStrLn $ "FooQuery: b = " ++ show b
-    call $ Launch $ LookupNameQuery $ if b then "www.hawaga.org.uk" else "www.cqx.ltd.uk"
+    r <- call $ Launch $ LookupNameQuery $ if b then "www.hawaga.org.uk" else "www.cqx.ltd.uk"
+    liftIO $ putStrLn $ "FooQuery/" ++ show b ++ " result: " ++ show r
     liftIO $ putStrLn "FooQuery finished"

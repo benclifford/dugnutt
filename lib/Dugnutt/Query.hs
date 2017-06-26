@@ -13,9 +13,15 @@ module Dugnutt.Query where
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Maybe (fromMaybe)
+import Data.Typeable (Typeable, cast)
 import Data.Void
 
-class (Show q, Show (Answer q)) => Query q where
+class (Show q, Show (Answer q),
+       Typeable q, Typeable (Answer q),
+       Eq q, Eq (Answer q)
+      )
+  => Query q where
 
   -- | Queries of type q will return answers of type (Answer q)
   type Answer q
@@ -44,10 +50,10 @@ data DugnuttCommand v where
 
   -- | Launch a query. Similar discussion about Void return
   --   type as with Yield.
-  Launch :: Query q => q -> DugnuttCommand ()
+  Launch :: Query q => q -> DugnuttCommand (Answer q)
 
   Fork :: DugnuttCommand Bool
-  End :: DugnuttCommand Void -- ends the current thread without a result
+  End :: DugnuttCommand t -- ends the current thread without a result
 
 -- | from okmij "Freer monads, More Extensible Effects",
 --   I've taken the freer monad stuff, but not the extensible
@@ -109,8 +115,12 @@ runAction (Impure (Yield q a) k) = do
 
 runAction (Impure (Launch q) k) = do
   putStrLn $ "Launch: query: " ++ show q
-  nexts' <- runAction $ k ()
-  return $ (L q) : nexts'
+  -- we should register the query to be launched
+  -- but also register the continuation callback
+  -- appropriately: both to catch future yields
+  -- and to deal with already yielded values.
+  -- nexts' <- runAction $ k ()
+  return [(L q), (C q (\v -> ((k v) >> call End)))]
 
 runAction (Impure (Fork) k) = do
   putStrLn "Forking: False-side"
@@ -133,35 +143,57 @@ drive query = do
 
 driveIter :: [Next] -> [DBEntry] -> IO [DBEntry]
 driveIter [] db = do
-  putStrLn $ "driveIter: all done with database size " ++ (show . length) db
+  putStrLn $ "driveIter: STEP: all done with database size " ++ (show . length) db
   return db
 
 -- TODO: only launch if we haven't already launched.
 driveIter ((L query):ns) db = do
-  putStrLn "driveIter: Launching a query"
+  putStrLn "driveIter: STEP: Launching a query"
   ns' <- runAction (launch query)
   putStrLn $ "driveIter: Action produced "
           ++ (show . length) ns'
-          ++ " addition nexts."
+          ++ " additional nexts."
   driveIter (ns' ++ ns) db
   -- the ordering of this concatenation is going to
   -- have some influence on whether we behave vaguely
   -- breadth first or depth first.
 
-driveIter (y@(Y query answer):ns) db = do
-  putStrLn "driveIter: TODO: yield/Y not fully implemented"
+driveIter ((Y query answer):ns) db = do
+  putStrLn "driveIter: STEP: yield/Y"
 
-  -- what is yield going to do?
-  -- two things:
-  -- 1. add the current answer to the answer database for
-  --    future iterations
-  -- and 
-  -- 2. execute any callbacks that are waiting on the
-  --    results of this query, in the callback database.
-  -- To begin with, 1 is the one I want to deal with.
+  let cbs = findCallbacks db query
+
+  putStrLn $ "driveIter: yield: there are " ++ (show . length) cbs
+          ++ " existing callbacks for this answer"  
+
+  nexts' <- mapM (\k -> runAction (k answer)) cbs
+
+  let nexts = concat nexts'
 
   let db' = updateDBWithYield db query answer
-  driveIter ns db'
+  let ns' = nexts ++ ns
+  driveIter ns' db'
+
+-- | C will:
+--     i) call the specified callback with any relevant answers
+--        straight away
+--    ii) store the callback for later use when new relevant
+--        answers are Yielded.
+driveIter ((C q k):ns) db = do
+  putStrLn "driveIter: STEP: callback/C"
+
+  let anss = findAnswers db q
+  putStrLn $ "driveIter: callback: there are " ++ (show . length) anss
+          ++ " existing answers for this callback"
+
+  nexts' <- mapM (runAction . k) anss
+
+  let nexts = concat nexts'
+
+  let db' = updateDBWithCallback db q k
+  let ns' = nexts ++ ns
+  driveIter ns' db'
+
 
 data Next where
   -- | yield a result for a query
@@ -170,6 +202,9 @@ data Next where
   -- | launch a query
   L :: Query q => q -> Next
 
+  -- | callback for query answers
+  C :: Query q => q -> (Answer q -> Action Void) -> Next
+
 -- | This is not parameterised by the type of query,
 --   so that a collecton of DBEntries can represent
 --   different types of queries.
@@ -177,16 +212,39 @@ data Next where
 --   query already encountered, and (TODO) callbacks to be
 --   run for new answers.
 data DBEntry where
-  DBEntry :: Query q => q -> [Answer q] -> DBEntry
+  DBEntry :: Query q => q -> [Answer q] -> [Answer q -> Action Void] -> DBEntry
 
 updateDBWithYield :: Query q => [DBEntry] -> q -> Answer q -> [DBEntry]
-updateDBWithYield db query answer = db ++ [DBEntry query [answer]] -- TODO needs to update existing entries...
+updateDBWithYield db query answer = db ++ [DBEntry query [answer] []] -- TODO needs to update existing entries...
+
+updateDBWithCallback :: Query q => [DBEntry] -> q -> (Answer q -> Action Void) -> [DBEntry]
+updateDBWithCallback db query k = db ++ [DBEntry query [] [k]] -- TODO needs to update existing entries...
 
 instance Show DBEntry where
-  show (DBEntry query anss) =
+  show (DBEntry query anss ks) =
        "DBEntry { q = "
     ++ show query
     ++ ", n_ans = " ++ (show . length) anss
     ++ ", ans = " ++ show anss
+    ++ ", n_callback = " ++ (show . length) ks
     ++ "}"
+
+-- TODO: implement p properly
+findAnswers :: Query q => [DBEntry] -> q -> [Answer q]
+findAnswers db q = let
+     getQuery (DBEntry q' as cs) = cast q'
+     getAnswers (DBEntry q' as cs) = fromMaybe
+       (error "impossible: findAnswers cast failed")
+       (cast as)
+     p dbe = getQuery dbe == Just q
+  in concat $ map getAnswers $ filter p db 
+
+findCallbacks :: Query q => [DBEntry] -> q -> [Answer q -> Action Void]
+findCallbacks db q = let
+     getQuery (DBEntry q' as cs) = cast q'
+     getCallbacks (DBEntry q' as cs) = fromMaybe
+       (error "impossible: findCallbacks cast failed")
+       (cast cs)
+     p dbe = getQuery dbe == Just q
+  in concat $ map getCallbacks $ filter p db
 
