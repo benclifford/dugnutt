@@ -1,5 +1,11 @@
+{-# Language OverloadedStrings #-}
+
 module Dugnutt where
 
-  foo :: IO ()
-  foo = putStrLn "dugnutt lib foo"
+import Dugnutt.LookupNameQuery
+import Dugnutt.Query
+
+initq :: IO ()
+initq = runAction (run (LookupNameQuery "www.hawaga.org.uk"))
+
 
