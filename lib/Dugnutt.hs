@@ -7,9 +7,9 @@ import Dugnutt.Query
 
 initq :: IO ()
 initq = do
-  putStrLn "dugnutt: initq: starting query"
+  putStrLn "initq: starting query"
   res <- drive (LookupNameQuery "www.hawaga.org.uk")
-  putStrLn $ "dugnutt: initq: finished"
-  putStrLn $ "Database:"
+  putStrLn $ "initq: finished"
+  putStrLn $ "initq: database:"
   print res
 

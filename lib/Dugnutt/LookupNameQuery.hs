@@ -1,4 +1,5 @@
 {-# Language TypeFamilies #-}
+{-# Language OverloadedStrings #-}
 
 module Dugnutt.LookupNameQuery where
 
@@ -23,7 +24,7 @@ instance Query LookupNameQuery where
       seed <- makeResolvSeed defaultResolvConf
       withResolver seed $ \resolver -> do
         res <- DNS.lookup resolver domain ty
-        putStr "results are: "
+        putStr "LookupNameQuery: results are: "
         print res
         return res
     call (Yield q ans)

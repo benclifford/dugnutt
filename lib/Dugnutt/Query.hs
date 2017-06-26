@@ -41,6 +41,9 @@ data DugnuttCommand v where
   --   feel a bit uncomfortable non-det-wise.
   Yield :: Query q => q -> Answer q -> DugnuttCommand ()
 
+  -- | Launch a query. Similar discussion about Void return
+  --   type as with Yield.
+  Launch :: Query q => q -> DugnuttCommand ()
 
 -- | from okmij "Freer monads, More Extensible Effects",
 --   I've taken the freer monad stuff, but not the extensible
@@ -98,11 +101,16 @@ runAction (Impure (Yield q a) k) = do
   
   return $ (Y q a) : nexts'
 
+runAction (Impure (Launch q) k) = do
+  putStrLn $ "Launch: query: " ++ show q
+  nexts' <- runAction $ k ()
+  return $ (L q) : nexts'
+
 -- | drive something (an Action?) until there are no
 --   nexts left to do.
 drive :: Query q => q -> IO [DBEntry]
 drive query = do
-  putStrLn "Driving"
+  putStrLn $ "drive: Driving " ++ show query
   driveIter [L query] []
 
 
