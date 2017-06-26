@@ -12,12 +12,12 @@ import Network.DNS as DNS
 -- in use in a regular app.
 data LookupNameQuery = LookupNameQuery {
     domain :: Domain
-  }
+  } deriving Show
 
 instance Query LookupNameQuery where
   type Answer LookupNameQuery = Either DNSError [RData]
 
-  run q@(LookupNameQuery domain) = do
+  launch q@(LookupNameQuery domain) = do
     ans <- liftIO $ do
       let ty = A
       seed <- makeResolvSeed defaultResolvConf
@@ -28,3 +28,4 @@ instance Query LookupNameQuery where
         return res
     call (Yield q ans)
     return ()
+
