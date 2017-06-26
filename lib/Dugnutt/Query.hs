@@ -13,6 +13,7 @@ module Dugnutt.Query where
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Void
 
 class (Show q, Show (Answer q)) => Query q where
 
@@ -39,13 +40,14 @@ data DugnuttCommand v where
   --   multiple yields have to happen over mpluses rather
   --   than the current serialisation, which makes me
   --   feel a bit uncomfortable non-det-wise.
-  Yield :: Query q => q -> Answer q -> DugnuttCommand ()
+  Yield :: Query q => q -> Answer q -> DugnuttCommand Void
 
   -- | Launch a query. Similar discussion about Void return
   --   type as with Yield.
   Launch :: Query q => q -> DugnuttCommand ()
 
   Fork :: DugnuttCommand Bool
+  End :: DugnuttCommand Void -- ends the current thread without a result
 
 -- | from okmij "Freer monads, More Extensible Effects",
 --   I've taken the freer monad stuff, but not the extensible
@@ -96,12 +98,14 @@ runAction (Impure (LiftIO a) k) = do
   runAction $ k v
 runAction (Impure (Yield q a) k) = do
   putStrLn "Yield: running rest of program ..."
+  {- 
   nexts' <- runAction $ k ()
   putStrLn $ "Yield: rest of program gave "
           ++ (show . length) nexts'
           ++ " nexts."
+  -}
   
-  return $ (Y q a) : nexts'
+  return [(Y q a)]
 
 runAction (Impure (Launch q) k) = do
   putStrLn $ "Launch: query: " ++ show q
@@ -114,6 +118,10 @@ runAction (Impure (Fork) k) = do
   putStrLn "Forking: True-side"
   nextsTrue <- runAction (k True)
   return $ nextsFalse ++ nextsTrue
+
+runAction (Impure End k) = do
+  putStrLn "End: aborting this thread and ignoring continuation"
+  return []
 
 -- | drive something (an Action?) until there are no
 --   nexts left to do.

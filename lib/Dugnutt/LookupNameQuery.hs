@@ -28,7 +28,7 @@ instance Query LookupNameQuery where
         print res
         return res
     call (Yield q ans)
-    return ()
+    error "impossible: after Yield"
 
 data FooQuery = FooQuery deriving Show
 
