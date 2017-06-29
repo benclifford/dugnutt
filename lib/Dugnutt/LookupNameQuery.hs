@@ -24,9 +24,8 @@ instance Query LookupNameQuery where
       seed <- makeResolvSeed defaultResolvConf
       withResolver seed $ \resolver -> do
         res <- DNS.lookup resolver domain ty
-        putStr "LookupNameQuery: results are: "
-        print res
         return res
+    call (Log $ "LookupNameQuery: results are: " ++ show ans)
     call (Yield q ans)
     error "impossible: after Yield"
 
@@ -35,10 +34,10 @@ data FooQuery = FooQuery deriving (Eq, Show)
 instance Query FooQuery where
   type Answer FooQuery = String
   launch FooQuery = do
-    liftIO $ putStrLn "FooQuery start"
-    liftIO $ putStrLn "FooQuery forking"
+    call (Log "FooQuery start")
+    call (Log "FooQuery forking")
     b <- call Fork
-    liftIO $ putStrLn $ "FooQuery: b = " ++ show b
+    call $ Log $ "FooQuery: b = " ++ show b
     r <- call $ Launch $ LookupNameQuery $ if b then "www.hawaga.org.uk" else "www.cqx.ltd.uk"
-    liftIO $ putStrLn $ "FooQuery/" ++ show b ++ " result: " ++ show r
-    liftIO $ putStrLn "FooQuery finished"
+    call $ Log $ "FooQuery/" ++ show b ++ " result: " ++ show r
+    call $ Log $ "FooQuery finished"

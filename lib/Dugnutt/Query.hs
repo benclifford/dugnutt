@@ -34,6 +34,9 @@ type Action = FFree DugnuttCommand
 -- | The language of Dugnutt
 data DugnuttCommand v where
 
+  -- |Log a message
+  Log :: String -> DugnuttCommand ()
+
   -- |perform some IO action
   LiftIO :: IO v -> DugnuttCommand v
 
@@ -99,6 +102,11 @@ call cmd = Impure cmd pure
 runAction :: Action v -> IO [Next]
 runAction (Pure v) = return [] -- discard the result. and there are
                                -- no more actions to perform.
+
+runAction (Impure (Log msg) k) = do
+  putStrLn $ "; " ++ msg
+  runAction $ k ()
+
 runAction (Impure (LiftIO a) k) = do
   v <- a
   runAction $ k v
