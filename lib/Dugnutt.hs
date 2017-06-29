@@ -8,8 +8,10 @@ import Dugnutt.Query
 initq :: IO ()
 initq = do
   putStrLn "initq: starting query"
-  res <- drive (LookupNameQuery "www.hawaga.org.uk")
+  let query = LookupNameQuery "www.hawaga.org.uk"
+  db <- drive query
   putStrLn $ "initq: finished"
   putStrLn $ "initq: database:"
-  print res
-
+  print db
+  putStrLn $ "initq: final answers to query:"
+  print (findAnswers db query)
