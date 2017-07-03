@@ -3,7 +3,7 @@ module Dugnutt.RecursiveLookup where
 
 import Data.ByteString.Char8 (unpack, pack)
 import Data.IP
-import Data.List (tails, intersperse)
+import Data.List (sort, tails, intersperse)
 import Data.List.Split (splitOn)
 
 import Network.DNS
@@ -43,8 +43,9 @@ instance Query RecursiveLookup where
     -- unpacked into individual records because sometimes we should
     -- reason about the set as a whole.
 
-    call $ Log $ "RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") => " ++ show res
-    call $ Yield q res
+    let resSorted = fmap sort res
+    call $ Log $ "RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") => " ++ show resSorted
+    call $ Yield q resSorted
     return () -- never reached because of Yield
 
 splitByZone :: Domain -> Action Domain
