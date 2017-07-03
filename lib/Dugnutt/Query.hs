@@ -122,7 +122,7 @@ runAction (Impure (Yield q a) k) = do
   return [(Y q a)]
 
 runAction (Impure (Launch q) k) = do
-  putStrLn $ "Launch: query: " ++ show q
+  putStrLn $ "Launch: queuing query: " ++ show q
   -- we should register the query to be launched
   -- but also register the continuation callback
   -- appropriately: both to catch future yields
@@ -143,52 +143,77 @@ runAction (Impure End k) = do
 
 -- | drive something (an Action?) until there are no
 --   nexts left to do.
-drive :: Query q => q -> IO [DBEntry]
-drive query = do
+drive :: Query q => [DBEntry] -> q -> IO [DBEntry]
+drive db query = do
   putStrLn $ "drive: Driving " ++ show query
-  driveIter [L query] []
+  driveIter [L query] db
 
 
 driveIter :: [Next] -> [DBEntry] -> IO [DBEntry]
-driveIter [] db = do
+driveIter todo@[] db = do
+  printStats todo db
   putStrLn $ "driveIter: STEP: all done with database size " ++ (show . length) db
   return db
 
--- TODO: only launch if we haven't already launched.
-driveIter ((L query):ns) db = do
-  putStrLn "driveIter: STEP: Launching a query"
-  ns' <- runAction (launch query)
-  putStrLn $ "driveIter: Action produced "
-          ++ (show . length) ns'
-          ++ " additional nexts."
-  driveIter (ns' ++ ns) db
+driveIter todo@((L query):ns) db = do
+  printStats todo db
+  putStrLn $ "driveIter: STEP: Request to launching a query: " ++ show query
+  if not (isLaunched db query)
+    then do
+      putStrLn "driveIter: Query has not been previously launched. Launching now."
+      ns' <- runAction (launch query)
+      putStrLn $ "driveIter: Action produced "
+              ++ (show . length) ns'
+              ++ " additional nexts."
+      let db' = updateDBWithLaunch db query
+      driveIter (ns' ++ ns) db'
+    else do
+      putStrLn "driveIter: Query has previously launched. Not re-launching."
+      driveIter ns db
   -- the ordering of this concatenation is going to
   -- have some influence on whether we behave vaguely
   -- breadth first or depth first.
 
-driveIter ((Y query answer):ns) db = do
+-- TODO: only yield if this value isn't already in the
+-- database. if it is in the database, this means that
+-- all necessary callbacks should have already been called,
+-- either by the previous Yield, or by the 'C' callback.
+driveIter todo@((Y query answer):ns) db = do
+  printStats todo db
   putStrLn "driveIter: STEP: yield/Y"
 
-  let cbs = findCallbacks db query
+  if not (isAlreadyKnown db query answer)
+    then do 
+      putStrLn "driveIter: new answer:"
+      putStrLn $ (show query) ++ " => " ++ (show answer)
 
-  putStrLn $ "driveIter: yield: there are " ++ (show . length) cbs
-          ++ " existing callbacks for this answer"  
+      let cbs = findCallbacks db query
 
-  nexts' <- mapM (\k -> runAction (k answer)) cbs
+      putStrLn $ "driveIter: yield: there are " ++ (show . length) cbs
+              ++ " callbacks for this query."  
 
-  let nexts = concat nexts'
+      nexts' <- mapM (\k -> runAction (k answer)) cbs
 
-  let db' = updateDBWithYield db query answer
-  let ns' = nexts ++ ns
-  driveIter ns' db'
+      let nexts = concat nexts'
+
+      let db' = updateDBWithYield db query answer
+      let ns' = nexts ++ ns
+      driveIter ns' db'
+    else do
+      putStrLn $ "driveIter: answer already known: "
+        ++ (show query) ++ " => " ++ (show answer)
+      driveIter ns db
+     
 
 -- | C will:
 --     i) call the specified callback with any relevant answers
 --        straight away
 --    ii) store the callback for later use when new relevant
 --        answers are Yielded.
-driveIter ((C q k):ns) db = do
+driveIter todo@((C q k):ns) db = do
+  printStats todo db
   putStrLn "driveIter: STEP: callback/C"
+  putStrLn $ "driveIter: adding callback for " ++ (show q)
 
   let anss = findAnswers db q
   putStrLn $ "driveIter: callback: there are " ++ (show . length) anss
@@ -217,31 +242,37 @@ data Next where
 --   so that a collecton of DBEntries can represent
 --   different types of queries.
 --   An entry will contain both the answers for this
---   query already encountered, and (TODO) callbacks to be
---   run for new answers.
+--   query already encountered, callbacks to be
+--   run for new answers, and a flag whether this
+--   query has been launched or not. (it might not be
+--   because we might have got an answer through some
+--   other process)
 data DBEntry where
-  DBEntry :: Query q => q -> [Answer q] -> [Answer q -> Action Void] -> DBEntry
+  DBEntry :: Query q => q -> [Answer q] -> [Answer q -> Action Void] -> Bool -> DBEntry
 
 updateDBWithYield :: Query q => [DBEntry] -> q -> Answer q -> [DBEntry]
-updateDBWithYield db query answer = db ++ [DBEntry query [answer] []] -- TODO needs to update existing entries...
+updateDBWithYield db query answer = db ++ [DBEntry query [answer] [] False] -- TODO needs to update existing entries...
 
 updateDBWithCallback :: Query q => [DBEntry] -> q -> (Answer q -> Action Void) -> [DBEntry]
-updateDBWithCallback db query k = db ++ [DBEntry query [] [k]] -- TODO needs to update existing entries...
+updateDBWithCallback db query k = db ++ [DBEntry query [] [k] False] -- TODO needs to update existing entries...
+
+updateDBWithLaunch :: Query q => [DBEntry] -> q -> [DBEntry]
+updateDBWithLaunch db query = db ++ [DBEntry query [] [] True] -- TODO needs to update existing entries...
 
 instance Show DBEntry where
-  show (DBEntry query anss ks) =
+  show (DBEntry query anss ks launched) =
        "DBEntry { q = "
     ++ show query
     ++ ", n_ans = " ++ (show . length) anss
     ++ ", ans = " ++ show anss
     ++ ", n_callback = " ++ (show . length) ks
+    ++ ", " ++ if launched then "launched" else "not launched"
     ++ "}"
 
--- TODO: implement p properly
 findAnswers :: Query q => [DBEntry] -> q -> [Answer q]
 findAnswers db q = let
-     getQuery (DBEntry q' as cs) = cast q'
-     getAnswers (DBEntry q' as cs) = fromMaybe
+     getQuery (DBEntry q' as cs l) = cast q'
+     getAnswers (DBEntry q' as cs l) = fromMaybe
        (error "impossible: findAnswers cast failed")
        (cast as)
      p dbe = getQuery dbe == Just q
@@ -249,10 +280,60 @@ findAnswers db q = let
 
 findCallbacks :: Query q => [DBEntry] -> q -> [Answer q -> Action Void]
 findCallbacks db q = let
-     getQuery (DBEntry q' as cs) = cast q'
-     getCallbacks (DBEntry q' as cs) = fromMaybe
+     getQuery (DBEntry q' as cs l) = cast q'
+     getCallbacks (DBEntry q' as cs l) = fromMaybe
        (error "impossible: findCallbacks cast failed")
        (cast cs)
      p dbe = getQuery dbe == Just q
   in concat $ map getCallbacks $ filter p db
 
+isLaunched :: Query q => [DBEntry] -> q -> Bool
+isLaunched db q = let
+     getQuery (DBEntry q' as cs l) = cast q'
+     getLaunched (DBEntry q' as cs l) = l
+     p dbe = getQuery dbe == Just q
+  in or $ map getLaunched $ filter p db
+
+isAlreadyKnown :: Query q => [DBEntry] -> q -> Answer q -> Bool
+isAlreadyKnown db q a = let
+  answers = findAnswers db q
+  in a `elem` answers
+
+countLaunched :: [DBEntry] -> Int
+countLaunched db = let
+      getLaunched (DBEntry _ _ _ l) = l
+      p dbe = getLaunched dbe
+  in length $ filter p db
+
+countCallbacks :: [DBEntry] -> Int
+countCallbacks db = let
+      getEntryCallbackLength (DBEntry _ _ cs _) = length cs
+  in sum (map getEntryCallbackLength db)
+
+countAnswers :: [DBEntry] -> Int
+countAnswers db = let
+      getEntryAnswerLength (DBEntry _ as _ _) = length as
+  in sum (map getEntryAnswerLength db)
+
+-- TODO: countQueries would be nice too...
+-- might need some casting fun.
+-- this would be in the same 'scale' as the
+-- number of launches that we've made, but would differ
+-- because would be queries we know facts for (so would
+-- be >=?)
+
+printStats :: [Next] -> [DBEntry] -> IO ()
+printStats nexts db = do
+  putStr "; *** "
+  putStr $ (show . length) nexts
+  putStr " steps to do. "
+  putStr $ (show . length) db
+  putStr " entries in database: "
+  putStr $ (show . countLaunched) db
+  putStr " queries launched, "
+  putStr $ (show . countCallbacks) db
+  putStr " callbacks registered, "
+  putStr $ (show . countAnswers) db
+  putStr " answers known."
+ 
+  putStrLn "***"

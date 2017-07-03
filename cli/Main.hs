@@ -1,5 +1,7 @@
 
 module Main where
 
+import Dugnutt (initq)
+
 main :: IO ()
-main = error "dugnutt cli not implemented"
+main = initq

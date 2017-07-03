@@ -16,8 +16,18 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      lib
   exposed-modules:     Dugnutt
+                     , Dugnutt.LookupNameQuery
+                     , Dugnutt.PopulateRootNameservers
+                     , Dugnutt.Query
+                     , Dugnutt.QuerySpecificAddress
+                     , Dugnutt.RecursiveLookup
+
   build-depends:       base >= 4.7 && < 5
+                     , bytestring
                      , dns
+                     , iproute
+                     , network
+                     , split
   default-language:    Haskell2010
 
 executable dugnutt
