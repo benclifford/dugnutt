@@ -22,8 +22,8 @@ module Dugnutt.PopulateRootNameservers where
       call $ Log "Populating pre-compiled root name server information"
       b <- call Fork
       if b
-        then call $ Yield (RecursiveLookup "a.root-servers.net" A) (Right [RD_A (read "198.41.0.4")])
-        else call $ Yield (RecursiveLookup "" NS) (Right [RD_NS "a.root-servers.net"])
+        then call $ Yield (RecursiveLookup "a.root-servers.net." A) (Right [RD_A (read "198.41.0.4")])
+        else call $ Yield (RecursiveLookup "." NS) (Right [RD_NS "a.root-servers.net."])
       return ()
 
 -- Data retrieved from DNS on 2017/07/03

@@ -13,7 +13,7 @@ import Network.DNS
 initq :: IO ()
 initq = do
   putStrLn "initq: starting query"
-  let query = RecursiveLookup "www.hawaga.org.uk" A
+  let query = RecursiveLookup "www.hawaga.org.uk." A
 
   -- We can meaningfully drive multiple queries in a row
   -- sharing the db between them: sharing the db means

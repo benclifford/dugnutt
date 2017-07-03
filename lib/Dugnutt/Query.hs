@@ -10,8 +10,8 @@
 
 module Dugnutt.Query where
 
-import Control.Applicative (Alternative)
-import Control.Monad (MonadPlus)
+import Control.Applicative (Alternative(..))
+import Control.Monad (MonadPlus(..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable, cast)
@@ -80,7 +80,12 @@ instance Monad (FFree f) where
 
 -- only freers which implement some monad plus effect have
 -- this, so specialise this to our particular freer instance
-instance Alternative Action
+instance Alternative Action where
+  empty = call End
+  a <|> b = do
+    choice <- call Fork
+    if choice then a else b
+
 instance MonadPlus Action
 
 -- only freers which sit on top of IO have this, so specialise
@@ -337,3 +342,4 @@ printStats nexts db = do
   putStr " answers known."
  
   putStrLn "***"
+

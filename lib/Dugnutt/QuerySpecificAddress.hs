@@ -3,13 +3,14 @@
 
 module Dugnutt.QuerySpecificAddress where
 
+import Dugnutt.Domain
 import Dugnutt.Query
 
 import Control.Monad.IO.Class (liftIO)
 import Data.Monoid ( (<>) )
-import Network.DNS as DNS (DNSError, Domain, 
+import Network.DNS as DNS (DNSError, DNSMessage, Domain,
          FileOrNumericHost(..),
-         lookup,
+         lookupRaw,
          makeResolvSeed,
          RData, ResolvConf(..), TYPE,
          withResolver)
@@ -26,21 +27,23 @@ data QuerySpecificAddress = QuerySpecificAddress {
   } deriving (Show, Eq)
 
 instance Query QuerySpecificAddress where
-  type Answer QuerySpecificAddress = Either DNSError [RData]
+  type Answer QuerySpecificAddress = Either DNSError DNSMessage
 
   launch q@(QuerySpecificAddress nameserver domain rrtype) = do
     call $ Log $ "QuerySpecificAddress: querying "
       ++ show nameserver ++ " for "
       ++ show domain ++ "/" ++ show rrtype
+    assertNormalised domain
     let conf = ResolvConf {
             resolvInfo = RCHostName nameserver
           , resolvRetry = 10
           , resolvTimeout = 6000000
           }
-    r <- liftIO $ do
+    rawMsg <- liftIO $ do
       seed <- makeResolvSeed conf
       withResolver seed $ \resolver -> do
-        DNS.lookup resolver (domain <> ".") rrtype
-    call $ Log $ "QuerySpecificAddress: " ++ show q ++ " => " ++ show r
-    call $ Yield q r
+        DNS.lookupRaw resolver domain rrtype
+
+    call $ Log $ "QuerySpecificAddress: " ++ show q ++ " => " ++ show rawMsg
+    call $ Yield q rawMsg
     return ()
