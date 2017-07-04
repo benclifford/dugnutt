@@ -116,7 +116,7 @@ runAction (Impure (LiftIO a) k) = do
   v <- a
   runAction $ k v
 runAction (Impure (Yield q a) k) = do
-  putStrLn "Yield: running rest of program ..."
+  traceInterpreter "Yield: running rest of program ..."
   {- 
   nexts' <- runAction $ k ()
   putStrLn $ "Yield: rest of program gave "
@@ -127,7 +127,7 @@ runAction (Impure (Yield q a) k) = do
   return [(Y q a)]
 
 runAction (Impure (Launch q) k) = do
-  putStrLn $ "Launch: queuing query: " ++ show q
+  traceInterpreter $ "Launch: queuing query: " ++ show q
   -- we should register the query to be launched
   -- but also register the continuation callback
   -- appropriately: both to catch future yields
@@ -136,44 +136,44 @@ runAction (Impure (Launch q) k) = do
   return [(L q), (C q (\v -> ((k v) >> call End)))]
 
 runAction (Impure (Fork) k) = do
-  putStrLn "Forking: False-side"
+  traceInterpreter "Forking: False-side"
   nextsFalse <- runAction (k False)
-  putStrLn "Forking: True-side"
+  traceInterpreter "Forking: True-side"
   nextsTrue <- runAction (k True)
   return $ nextsFalse ++ nextsTrue
 
 runAction (Impure End k) = do
-  putStrLn "End: aborting this thread and ignoring continuation"
+  traceInterpreter "End: aborting this thread and ignoring continuation"
   return []
 
 -- | drive something (an Action?) until there are no
 --   nexts left to do.
 drive :: Query q => [DBEntry] -> q -> IO [DBEntry]
 drive db query = do
-  putStrLn $ "drive: Driving " ++ show query
+  traceInterpreter $ "drive: Driving " ++ show query
   driveIter [L query] db
 
 
 driveIter :: [Next] -> [DBEntry] -> IO [DBEntry]
 driveIter todo@[] db = do
   printStats todo db
-  putStrLn $ "driveIter: STEP: all done with database size " ++ (show . length) db
+  traceInterpreter $ "driveIter: STEP: all done with database size " ++ (show . length) db
   return db
 
 driveIter todo@((L query):ns) db = do
   printStats todo db
-  putStrLn $ "driveIter: STEP: Request to launching a query: " ++ show query
+  traceInterpreter $ "driveIter: STEP: Request to launching a query: " ++ show query
   if not (isLaunched db query)
     then do
-      putStrLn "driveIter: Query has not been previously launched. Launching now."
+      traceInterpreter "driveIter: Query has not been previously launched. Launching now."
       ns' <- runAction (launch query)
-      putStrLn $ "driveIter: Action produced "
+      traceInterpreter $ "driveIter: Action produced "
               ++ (show . length) ns'
               ++ " additional nexts."
       let db' = updateDBWithLaunch db query
       driveIter (ns' ++ ns) db'
     else do
-      putStrLn "driveIter: Query has previously launched. Not re-launching."
+      traceInterpreter "driveIter: Query has previously launched. Not re-launching."
       driveIter ns db
   -- the ordering of this concatenation is going to
   -- have some influence on whether we behave vaguely
@@ -185,16 +185,16 @@ driveIter todo@((L query):ns) db = do
 -- either by the previous Yield, or by the 'C' callback.
 driveIter todo@((Y query answer):ns) db = do
   printStats todo db
-  putStrLn "driveIter: STEP: yield/Y"
+  traceInterpreter "driveIter: STEP: yield/Y"
 
   if not (isAlreadyKnown db query answer)
     then do 
-      putStrLn "driveIter: new answer:"
-      putStrLn $ (show query) ++ " => " ++ (show answer)
+      traceInterpreter "driveIter: new answer:"
+      traceInterpreter $ (show query) ++ " => " ++ (show answer)
 
       let cbs = findCallbacks db query
 
-      putStrLn $ "driveIter: yield: there are " ++ (show . length) cbs
+      traceInterpreter $ "driveIter: yield: there are " ++ (show . length) cbs
               ++ " callbacks for this query."  
 
       nexts' <- mapM (\k -> runAction (k answer)) cbs
@@ -205,7 +205,7 @@ driveIter todo@((Y query answer):ns) db = do
       let ns' = nexts ++ ns
       driveIter ns' db'
     else do
-      putStrLn $ "driveIter: answer already known: "
+      traceInterpreter $ "driveIter: answer already known: "
         ++ (show query) ++ " => " ++ (show answer)
       driveIter ns db
      
@@ -217,11 +217,11 @@ driveIter todo@((Y query answer):ns) db = do
 --        answers are Yielded.
 driveIter todo@((C q k):ns) db = do
   printStats todo db
-  putStrLn "driveIter: STEP: callback/C"
-  putStrLn $ "driveIter: adding callback for " ++ (show q)
+  traceInterpreter "driveIter: STEP: callback/C"
+  traceInterpreter $ "driveIter: adding callback for " ++ (show q)
 
   let anss = findAnswers db q
-  putStrLn $ "driveIter: callback: there are " ++ (show . length) anss
+  traceInterpreter $ "driveIter: callback: there are " ++ (show . length) anss
           ++ " existing answers for this callback"
 
   nexts' <- mapM (runAction . k) anss
@@ -343,3 +343,5 @@ printStats nexts db = do
  
   putStrLn "***"
 
+traceInterpreter :: String -> IO ()
+traceInterpreter s = putStrLn s
