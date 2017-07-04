@@ -37,9 +37,10 @@ initq query = do
   db <- drive [] query
   db' <- drive db PopulateRootNameservers
   putStrLn $ "initq: finished"
-  putStrLn $ "initq: database:"
-  mapM_ printLn db'
+  -- putStrLn $ "initq: database:"
+  -- mapM_ printLn db'
   putStrLn $ "initq: final answers to query:"
   print (findAnswers db' query)
 
+printLn :: Show v => v -> IO ()
 printLn = putStrLn . show

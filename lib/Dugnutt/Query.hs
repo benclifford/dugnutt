@@ -13,6 +13,7 @@ module Dugnutt.Query where
 import Control.Applicative (Alternative(..))
 import Control.Monad (MonadPlus(..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.List (sortBy, groupBy, partition)
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable, cast)
 import Data.Void
@@ -158,6 +159,7 @@ driveIter :: [Next] -> [DBEntry] -> IO [DBEntry]
 driveIter todo@[] db = do
   printStats todo db
   traceInterpreter $ "driveIter: STEP: all done with database size " ++ (show . length) db
+  printStats' todo db
   return db
 
 driveIter todo@((L query):ns) db = do
@@ -170,7 +172,7 @@ driveIter todo@((L query):ns) db = do
       traceInterpreter $ "driveIter: Action produced "
               ++ (show . length) ns'
               ++ " additional nexts."
-      let db' = updateDBWithLaunch db query
+      let db' = shrinkWholeDB $ updateDBWithLaunch db query
       driveIter (ns' ++ ns) db'
     else do
       traceInterpreter "driveIter: Query has previously launched. Not re-launching."
@@ -201,7 +203,7 @@ driveIter todo@((Y query answer):ns) db = do
 
       let nexts = concat nexts'
 
-      let db' = updateDBWithYield db query answer
+      let db' = shrinkWholeDB $ updateDBWithYield db query answer
       let ns' = nexts ++ ns
       driveIter ns' db'
     else do
@@ -228,7 +230,7 @@ driveIter todo@((C q k):ns) db = do
 
   let nexts = concat nexts'
 
-  let db' = updateDBWithCallback db q k
+  let db' = shrinkWholeDB $ updateDBWithCallback db q k
   let ns' = nexts ++ ns
   driveIter ns' db'
 
@@ -256,13 +258,31 @@ data DBEntry where
   DBEntry :: Query q => q -> [Answer q] -> [Answer q -> Action Void] -> Bool -> DBEntry
 
 updateDBWithYield :: Query q => [DBEntry] -> q -> Answer q -> [DBEntry]
-updateDBWithYield db query answer = db ++ [DBEntry query [answer] [] False] -- TODO needs to update existing entries...
+updateDBWithYield db query answer = 
+  updateDB db query [answer] [] False
 
 updateDBWithCallback :: Query q => [DBEntry] -> q -> (Answer q -> Action Void) -> [DBEntry]
-updateDBWithCallback db query k = db ++ [DBEntry query [] [k] False] -- TODO needs to update existing entries...
+updateDBWithCallback db query k = 
+  updateDB db query [] [k] False
 
 updateDBWithLaunch :: Query q => [DBEntry] -> q -> [DBEntry]
-updateDBWithLaunch db query = db ++ [DBEntry query [] [] True] -- TODO needs to update existing entries...
+updateDBWithLaunch db query = 
+  updateDB db query [] [] True
+
+updateDB :: Query q => [DBEntry] -> q -> [Answer q] -> [Answer q -> Action Void] -> Bool -> [DBEntry]
+updateDB db query a k l = 
+  let (these, others) = partition p db
+      getQuery (DBEntry q' as cs l) = cast q'
+      p dbe = getQuery dbe == Just query
+      these' = case these of
+        [] -> [DBEntry query a k l]
+        ((DBEntry _ a' k' l') : xs) -> let
+               k'' = fromJust $ cast k'
+               a'' = fromJust $ cast a'
+               fromJust (Just x) = x
+           in (DBEntry query (a ++ a'') (k ++ k'') (l || l')) : xs
+    in these' ++ others
+
 
 instance Show DBEntry where
   show (DBEntry query anss ks launched) =
@@ -328,7 +348,9 @@ countAnswers db = let
 -- be >=?)
 
 printStats :: [Next] -> [DBEntry] -> IO ()
-printStats nexts db = do
+printStats nexts db = return ()
+
+printStats' nexts db = do
   putStr "; *** "
   putStr $ (show . length) nexts
   putStr " steps to do. "
@@ -345,3 +367,40 @@ printStats nexts db = do
 
 traceInterpreter :: String -> IO ()
 traceInterpreter s = putStrLn s
+
+-- | given a database, return a new database that
+--   contains the same data, but hopefully better
+--   laid out - with more shared DBEntries.
+shrinkWholeDB :: [DBEntry] -> [DBEntry]
+shrinkWholeDB = id
+
+shrinkDB' db = map mergeEntries $ groupBy eqOnQuery $ sortBy ordOnQuery db
+  where
+
+    -- This is icky, but basically uses show to convert arbitrary query
+    -- types all into one single type that has Ord. It doesn't matter
+    -- what the ordering is, as long as it puts the same queries next to
+    -- each other. The show based implementation relies on different
+    -- queries serialising to different strings.
+    ordOnQuery a b = (sq a) `compare` (sq b)
+
+    -- This uses show based ordering for consistency with ordOnQuery,
+    -- but eqOnQuery is probably easy to implement using cast (at least
+    -- compared to doing so for ordOnQuery, where an ordering on types
+    -- is needed)
+    eqOnQuery a b = (sq a) == (sq b)
+
+    sq (DBEntry q _ _ _) = show q
+
+    -- Assuming that all the given entries are for the same query
+    -- (which is not checked), create a single DB entry.
+    mergeEntries :: [DBEntry] -> DBEntry
+    mergeEntries entries = foldr1 catEntries entries
+
+    catEntries :: DBEntry -> DBEntry -> DBEntry
+    catEntries (DBEntry q1 a1 b1 l1) (DBEntry q2 a2 b2 l2) = let
+      a' = a1 ++ (fromJust $ cast a2)
+      b' = b1 ++ (fromJust $ cast b2)
+      l' = (l1 || l2)
+      fromJust (Just x) = x
+      in DBEntry q1 a' b' l'
