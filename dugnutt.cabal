@@ -36,6 +36,7 @@ executable dugnutt
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , dns
                      , dugnutt
   default-language:    Haskell2010
 
