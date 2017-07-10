@@ -45,47 +45,106 @@ instance Query RecursiveLookup where
 
     res <- call $ Launch (QSA.QuerySpecificAddress (show nameserverAddress) (domain q) (rrtype q))
 
-    -- res is a raw message, which needs some processing. The Network.DNS lookup
-    -- function takes only the answer section, and only records of the correct type
-    -- (so only exactly the answer - what happens for CNAMEs in Network.DNS?)
+    -- There are various results we can get here, and which I need to
+    -- decide how to represent in the internal structures:
+    --  1. a server error (res = Left err)
+    --  2. a final successful result without CNAME
+    --  3. a delegation
+    --  4. NXDOMAIN: status: NXDOMAIN, authority section contains SOA of containing zone. see rfc1034/s4.3.4 - the SOA is optional but allows caching. so status = NXDOMAIN is how we know this case 4 is matched, not the SOA.
+    --     TODO: Note that this asserts that the domain does not exist, for *all* RRtypes - not just the requested type. So for purposes of exploring all routes, we should cache/discover this fact whenever we ask for a different rrtype on the same domain, in addition to the present handling. (use case: buggy server asserts a name does not exist for type X, then we request type Y and it returns a result: depending on cache ordering, we either know the result for Y, or we know that Y does not exist).
+    --  5. a CNAME: status NOERROR. ANSWER contains 'domain CNAME s2'. 
+    --   5a. possibly contains 'd2 ...' RRs for the original type (eg if the zone contains it).   
+    --   and there is an AUTHORITY of NSes and ADDITIONAL data for NS As. (www.hawaga.org.uk for example); 
+    --   5b. sometimes neither (www.1stmerrow.org.uk for example) - I'm not sure why?
+    --   5c. With 'merrowscouts.hawaga.org.uk', a delegation into another zone but that is served from the same server, the onwards biscay.cqx.ltd.uk record is added to the ANSWER section, and the AUTHORITY section contains NS records for cqx.ltd.uk and the ADDITIONAL section contains A records for those NSes.
+    --   6. an indication that a label exists but has no RRs of the specified type. eg paella.hawaga.org.uk/RP: status NOERROR, nothing in ANSWER section, authority section contains SOA for the containing zone. This latter clause is how to tell it apart from a delegation, I think, and we should check that the authority contains no NS RRs to extra clear about separating cases 3 and 6.
+    -- There are two different ways that this could be handled at a higher level: one that the RR set is empty (which means in places where I care, for the purposes of non-determinism, about checking whether an rrset is empty or not so as to treat it like a NameError, those checks need to be explicit). The second is to treat the error like a NameError (or something similar). 
+    --   7. when we requested an ANY, what comes back in the 2. case is a bunch of resource records of assorted types, rather than an "ANY" type. A simple list of [RData] is insufficient for representing this. Maybe it shouldn't be allowed at this level? (although artificially generated to get more results)
 
-    -- in addition to partitioning the results, we need to ensure that
-    -- we yield a query result for the original query, even if the result
-    -- set is empty, I think - when we didn't get an error from the lookup.
-    -- so as to preserve the fact that we did get some kind of answer of that
-    -- specific query.
     case res of
-      Right rawMsg -> vacuous (yieldRawMessage q rawMsg)
+
+      -- case 2
+      Right rawMsg
+        | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr
+          && rawMessageContainsAnswers q rawMsg
+        -> vacuous $ yieldRawMessage q rawMsg
+
+      -- case 3: delegation
+      -- Note that this does not check if the referral is a downward
+      -- delegation (rather than some kind of upwards, towards the root
+      -- referral, which are rare in practice). For that, we'd also
+      -- need to pay attention to 'possibleAncestorZone'.
+      -- TODO: also check that there are no SOAs in the authority section
+      -- to be clear that it is not a denial of existence (see clause 6)
+      Right rawMsg
+        | (null . DNS.answer) rawMsg
+          && hasReferralNS q rawMsg
+          && (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr
+        -> vacuous $ yieldRawMessage q rawMsg
+
+      -- case 1
       Left err -> vacuous (call $ Yield q (Left err))
 
+      -- case 4
+      Right rawMsg | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NameErr -> vacuous (call $ Yield q (Left DNS.NameError))
 
+      -- case 6 - a label exists, but there are no RRs of the specified type.
+      Right rawMsg
+        | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr 
+          && (null . DNS.answer) rawMsg
+          && hasAuthoritySOA rawMsg
+        -> vacuous  (call $ Yield q (Right []))
+
+      -- fail on all other situations, rather than guessing what is
+      -- going on.
+      Right other -> error $ "RecursiveLookup: cannot handle this response: " ++ show other
+
+-- | Does the raw message contain resource record answers that
+--   match the given query?
+rawMessageContainsAnswers q rawMsg = let
+
+  correctName rr = DNS.rrname rr == domain q
+  correctRR rr = DNS.rrtype rr == rrtype q
+
+  -- as will contain the answer resource records which may
+  -- be for different names and RRtypes, not necessarily the
+  -- given query: for example CNAME, or RRSIG.
+  as = DNS.answer rawMsg
+  as' = filter correctName as
+  as'' = filter correctRR as'
+  in (not . null) as''
+
+hasReferralNS q rawMsg = let
+
+  correctRR rr = DNS.rrtype rr == DNS.NS
+
+  as = DNS.authority rawMsg
+
+  -- TODO: should check there that the NS records are for an
+  -- appropriate authority - something relevent to the referral
+  -- query.
+  as' = filter correctRR as
+  in (not . null) as'
+
+-- | Checks that the authority field contains an SOA.
+-- TODO: also check that the SOA records are for an appropriate
+-- authority - something relevant to the query
+hasAuthoritySOA rawMsg = let
+  correctRR rr = DNS.rrtype rr == DNS.SOA
+  as = DNS.authority rawMsg
+  as' = filter correctRR as
+  in (not . null) as'
+
+-- | This will yield all RRsets found in answer, authority and
+--   additional sections, regardless of which query was asked.
 yieldRawMessage :: RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldRawMessage q@(RecursiveLookup domain rrtype) rawMsg = do
   yieldAnswer q rawMsg
     `mplus` yieldAuthority q rawMsg
     `mplus` yieldAdditional q rawMsg
 
--- most importantly for practical purposes this is needed to extract
--- the NS AUTHORITY records which allow a delegation to take place,
--- which cannot happen just from ANSWER records.
--- so for now, let's just deal with that
-
--- but we also need the ADDITIONAL section in order to get glue
--- A records...
--- XXX so at this point, just implement proper shredding of the rawMsg...?
-
 yieldAnswer :: RecursiveLookup -> DNS.DNSMessage -> Action Void
-yieldAnswer q@(RecursiveLookup domain rrtype) rawMsg = do
-        let correct r = DNS.rrtype r == rrtype
-        let toRData = map DNS.rdata . filter correct . DNS.answer
-        let syntheticResult = DNS.fromDNSMessage rawMsg toRData
-        -- so we can yield the whole rrset/error now - this should not be
-        -- unpacked into individual records because sometimes we should
-        -- reason about the set as a whole.
-
-        let syntheticResultSorted = fmap sort syntheticResult
-        call $ Log $ "yieldAnswer: RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") => " ++ show syntheticResultSorted
-        call $ Yield q syntheticResultSorted
+yieldAnswer q rawMsg = yieldSection DNS.answer q rawMsg
 
 yieldAuthority :: RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldAuthority q rawMsg = yieldSection DNS.authority q rawMsg
