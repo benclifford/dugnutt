@@ -167,20 +167,25 @@ splitByZone domain = do
 getNameserverForZone :: Domain -> Action Domain
 getNameserverForZone zoneName = do
   call $ Log $ "getNameserverForZone: zone " ++ show zoneName
-  (Right ns_rrset) <- call $ Launch $ RecursiveLookup zoneName NS
-  call $ Log $ "getNameserverForZone: zone " ++ show zoneName
-            ++ " has NS RRSet " ++ show ns_rrset
+  
+  resp <- call $ Launch $ RecursiveLookup zoneName NS
+  call $ Log $ "getNamserverForZone: response " ++ show resp
+  case resp of
+    Left NameError -> call End -- this path won't give us a nameserver name
+    Right ns_rrset -> do 
+      call $ Log $ "getNameserverForZone: zone " ++ show zoneName
+                ++ " has NS RRSet " ++ show ns_rrset
   -- this might fail, rather than return a nameserver name
   -- so maybe we need to deal with that error being returned.
   -- perhaps we should actually return error here, and then
   -- turn that into more generally the resolution failing?
   -- (but not killing dugnutt...)
-  (RD_NS ns_name) <- pick ns_rrset
+      (RD_NS ns_name) <- pick ns_rrset
 
-  call $ Log $ "getNameserverForZone: zone " ++ show zoneName
-            ++ " has nameserver " ++ show ns_name 
-  assertNormalised ns_name
-  return ns_name
+      call $ Log $ "getNameserverForZone: zone " ++ show zoneName
+                ++ " has nameserver " ++ show ns_name 
+      assertNormalised ns_name
+      return ns_name
 
 -- TODO: returns (non-deterministically) the A/AAAA records for the given zone
 getAddressForHost :: Domain -> Action IPv4
@@ -188,14 +193,17 @@ getAddressForHost hostName = do
   assertNormalised hostName
   call $ Log $ "getAddressForHost: looking up address for host " 
             ++ show hostName
-  (Right a_rrset) <- call $ Launch $ RecursiveLookup hostName A
-  call $ Log $ "getAddressForHost: host " ++ show hostName
-            ++ " has A RRSet " ++ show a_rrset
-  (RD_A a) <- pick a_rrset
+  resp <- call $ Launch $ RecursiveLookup hostName A
+  case resp of 
+    Left _ -> call End
+    Right a_rrset -> do
+      call $ Log $ "getAddressForHost: host " ++ show hostName
+                ++ " has A RRSet " ++ show a_rrset
+      (RD_A a) <- pick a_rrset
 
-  call $ Log $ "getAddressForHost: host " ++ show hostName
-            ++ " has address " ++ show a
-  return a
+      call $ Log $ "getAddressForHost: host " ++ show hostName
+                ++ " has address " ++ show a
+      return a
 
 pick :: Show a => [a] -> Action a
 pick [] = do
