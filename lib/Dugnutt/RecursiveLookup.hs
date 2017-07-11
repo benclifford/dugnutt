@@ -171,7 +171,7 @@ getNameserverForZone zoneName = do
   resp <- call $ Launch $ RecursiveLookup zoneName NS
   call $ Log $ "getNamserverForZone: response " ++ show resp
   case resp of
-    Left NameError -> call End -- this path won't give us a nameserver name
+    Left _ -> call End -- this path won't give us a nameserver name
     Right ns_rrset -> do 
       call $ Log $ "getNameserverForZone: zone " ++ show zoneName
                 ++ " has NS RRSet " ++ show ns_rrset
