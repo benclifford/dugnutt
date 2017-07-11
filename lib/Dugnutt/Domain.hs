@@ -10,7 +10,6 @@ import Data.ByteString.Char8 (pack, unpack)
 
 assertNormalised :: Domain -> Action ()
 assertNormalised domain = do
-  call $ Log $ "assertNormalised: checking " ++ show domain
   when (((head . reverse . unpack) domain) /= '.') $ error "ASSERTION FAILURE in assertNormalised"
   return ()
 
