@@ -1,14 +1,10 @@
 {-# Language OverloadedStrings #-}
+{-# Options_GHC -Wall -Werror #-}
 
 module Dugnutt where
 
-import Dugnutt.LookupNameQuery
 import Dugnutt.PopulateRootNameservers
-import Dugnutt.RecursiveLookup
 import Dugnutt.Query
-
-import Control.Monad (mapM_)
-import Network.DNS
 
 initq :: Query q => q -> IO ()
 initq query = do

@@ -16,7 +16,6 @@ import Control.Applicative (Alternative(..))
 import Control.Monad (MonadPlus(..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.List (sortBy, groupBy, partition)
-import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable, cast)
 import Data.Void
 
@@ -88,7 +87,7 @@ call cmd = Impure cmd pure
 -- Initially, new results (from Yield) are what I need to implement.
 
 runAction :: Action v -> IO [Next]
-runAction (Pure v) = return [] -- discard the result. and there are
+runAction (Pure _) = return [] -- discard the result. and there are
                                -- no more actions to perform.
 
 runAction (Impure (Log msg) k) = do
@@ -98,15 +97,9 @@ runAction (Impure (Log msg) k) = do
 runAction (Impure (LiftIO a) k) = do
   v <- a
   runAction $ k v
-runAction (Impure (Yield q a) k) = do
+
+runAction (Impure (Yield q a) _k) = do
   traceInterpreter "Yield: running rest of program ..."
-  {- 
-  nexts' <- runAction $ k ()
-  putStrLn $ "Yield: rest of program gave "
-          ++ (show . length) nexts'
-          ++ " nexts."
-  -}
-  
   return [(Y q a)]
 
 runAction (Impure (Launch q) k) = do
@@ -125,7 +118,7 @@ runAction (Impure (Fork) k) = do
   nextsTrue <- runAction (k True)
   return $ nextsFalse ++ nextsTrue
 
-runAction (Impure End k) = do
+runAction (Impure End _k) = do
   traceInterpreter "End: aborting this thread and ignoring continuation"
   return []
 
@@ -247,7 +240,7 @@ data DBEntry where
 --   TODO: can this be implemented as a regular record
 --   syntax accessor, or does the polymorphism break it?
 getQuery :: Query q => DBEntry -> Maybe q
-getQuery (DBEntry q' as cs l) = cast q'
+getQuery (DBEntry q' _as _cs _l) = cast q'
 
 
 updateDBWithYield :: Query q => [DBEntry] -> q -> Answer q -> [DBEntry]
@@ -269,9 +262,8 @@ updateDB db query a k l =
       these' = case these of
         [] -> [DBEntry query a k l]
         ((DBEntry _ a' k' l') : xs) -> let
-               k'' = fromJust $ cast k'
-               a'' = fromJust $ cast a'
-               fromJust (Just x) = x
+               k'' = fromCastedJust $ cast k'
+               a'' = fromCastedJust $ cast a'
            in (DBEntry query (a ++ a'') (k ++ k'') (l || l')) : xs
     in these' ++ others
 
@@ -288,23 +280,19 @@ instance Show DBEntry where
 
 findAnswers :: Query q => [DBEntry] -> q -> [Answer q]
 findAnswers db q = let
-     getAnswers (DBEntry q' as cs l) = fromMaybe
-       (error "impossible: findAnswers cast failed")
-       (cast as)
+     getAnswers (DBEntry _q' as _cs _l) = fromCastedJust $ cast as
      p dbe = getQuery dbe == Just q
   in concat $ map getAnswers $ filter p db 
 
 findCallbacks :: Query q => [DBEntry] -> q -> [Answer q -> Action Void]
 findCallbacks db q = let
-     getCallbacks (DBEntry q' as cs l) = fromMaybe
-       (error "impossible: findCallbacks cast failed")
-       (cast cs)
+     getCallbacks (DBEntry _q' _as cs _l) = fromCastedJust $ cast cs
      p dbe = getQuery dbe == Just q
   in concat $ map getCallbacks $ filter p db
 
 isLaunched :: Query q => [DBEntry] -> q -> Bool
 isLaunched db q = let
-     getLaunched (DBEntry q' as cs l) = l
+     getLaunched (DBEntry _q' _as _cs l) = l
      p dbe = getQuery dbe == Just q
   in or $ map getLaunched $ filter p db
 
@@ -336,9 +324,13 @@ countAnswers db = let
 -- because would be queries we know facts for (so would
 -- be >=?)
 
+-- | optionally print stats at some points, although current
+--   implementation does nothing - this is a programmer time
+--   verbosity choice. TODO: make this runtime choosable
 printStats :: [Next] -> [DBEntry] -> IO ()
-printStats nexts db = return ()
+printStats _nexts _db = return ()
 
+printStats' :: [Next] -> [DBEntry] -> IO ()
 printStats' nexts db = do
   putStr "; *** "
   putStr $ (show . length) nexts
@@ -360,9 +352,19 @@ traceInterpreter s = putStrLn s
 -- | given a database, return a new database that
 --   contains the same data, but hopefully better
 --   laid out - with more shared DBEntries.
+--   or perhaps it makes no change: it is a
+--   (programmer-time) optimisation choice
+--   about whether to perform the shrink or not.
+--   TODO: make this optimisation choices runtime
+--   choosable
 shrinkWholeDB :: [DBEntry] -> [DBEntry]
 shrinkWholeDB = id
 
+-- | given a database, return a new database that contains
+--   the same data, but maybe better laid out. see
+--   'shrinkWholeDB' which is called at a different point but
+--   is in the same spririt.
+shrinkDB' :: [DBEntry] -> [DBEntry]
 shrinkDB' db = map mergeEntries $ groupBy eqOnQuery $ sortBy ordOnQuery db
   where
 
@@ -387,9 +389,16 @@ shrinkDB' db = map mergeEntries $ groupBy eqOnQuery $ sortBy ordOnQuery db
     mergeEntries entries = foldr1 catEntries entries
 
     catEntries :: DBEntry -> DBEntry -> DBEntry
-    catEntries (DBEntry q1 a1 b1 l1) (DBEntry q2 a2 b2 l2) = let
-      a' = a1 ++ (fromJust $ cast a2)
-      b' = b1 ++ (fromJust $ cast b2)
+    catEntries (DBEntry q1 a1 b1 l1) (DBEntry _q2 a2 b2 l2) = let
+      a' = a1 ++ (fromCastedJust $ cast a2)
+      b' = b1 ++ (fromCastedJust $ cast b2)
       l' = (l1 || l2)
-      fromJust (Just x) = x
       in DBEntry q1 a' b' l'
+
+-- | this is fromJust, but with a different error message
+--   that reflects the belief that it should never hit the
+--   Nothing case.
+fromCastedJust :: Maybe v -> v
+fromCastedJust (Just x) = x
+fromCastedJust Nothing = error "impossible: fromJust called on Nothing"
+

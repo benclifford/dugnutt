@@ -6,13 +6,13 @@ module Dugnutt.QuerySpecificAddress where
 import Dugnutt.Domain
 import Dugnutt.Query
 
+import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
-import Data.Monoid ( (<>) )
 import Network.DNS as DNS (DNSError, DNSMessage, Domain,
          FileOrNumericHost(..),
          lookupRaw,
          makeResolvSeed,
-         RData, ResolvConf(..), TYPE,
+         ResolvConf(..), TYPE,
          withResolver)
 import Network.Socket (HostName)
 
@@ -29,21 +29,22 @@ data QuerySpecificAddress = QuerySpecificAddress {
 instance Query QuerySpecificAddress where
   type Answer QuerySpecificAddress = Either DNSError DNSMessage
 
-  launch q@(QuerySpecificAddress nameserver domain rrtype) = do
+  launch q = do
     call $ Log $ "QuerySpecificAddress: querying "
-      ++ show nameserver ++ " for "
-      ++ show domain ++ "/" ++ show rrtype
-    assertNormalised domain
+      ++ show (nameserverAddr q) ++ " for "
+      ++ show (domain q)++ "/" ++ show (rrtype q)
+    assertNormalised (domain q)
     let conf = ResolvConf {
-            resolvInfo = RCHostName nameserver
+            resolvInfo = RCHostName (nameserverAddr q)
           , resolvRetry = 10
           , resolvTimeout = 6000000
+          , resolvBufsize = error "resolveBufsize should not be used"
           }
     rawMsg <- liftIO $ do
       seed <- makeResolvSeed conf
       withResolver seed $ \resolver -> do
-        DNS.lookupRaw resolver domain rrtype
+        DNS.lookupRaw resolver (domain q) (rrtype q)
 
     call $ Log $ "QuerySpecificAddress: " ++ show q ++ " => " ++ show rawMsg
-    call $ Yield q rawMsg
+    void $ call $ Yield q rawMsg
     return ()

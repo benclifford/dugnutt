@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 
 module Dugnutt.FFree where
 
@@ -13,10 +14,18 @@ data FFree f a where
   Impure :: f x -> (x -> FFree f a) -> FFree f a
 
 -- all freers have these:
-instance Functor (FFree f)
+instance Functor (FFree f) where
+  fmap f (Pure v) = Pure (f v)
+  fmap f (Impure a b) = Impure a (\x -> fmap f (b x))
 
 instance Applicative (FFree f) where
   pure v = Pure v
+
+  -- | This is potentially parallelisable in a Dugnutt
+  --   setting (as happens with Haxl for example). Nothing
+  --   uses it at the moment so don't spend time on it.
+  --   see for example https://elvishjerricco.github.io/2016/04/08/applicative-effects-in-free-monads.html
+  _a <*> _b = error "<*> not implemented for FFree"
 
 instance Monad (FFree f) where
   Pure v >>= rest = rest v

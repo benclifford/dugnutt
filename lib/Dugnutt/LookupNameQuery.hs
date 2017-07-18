@@ -5,6 +5,7 @@ module Dugnutt.LookupNameQuery where
 
 import Dugnutt.Query
 
+import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
 import Network.DNS as DNS
 
@@ -18,16 +19,15 @@ data LookupNameQuery = LookupNameQuery {
 instance Query LookupNameQuery where
   type Answer LookupNameQuery = Either DNSError [RData]
 
-  launch q@(LookupNameQuery domain) = do
+  launch q = do
     ans <- liftIO $ do
       let ty = A
       seed <- makeResolvSeed defaultResolvConf
       withResolver seed $ \resolver -> do
-        res <- DNS.lookup resolver domain ty
+        res <- DNS.lookup resolver (domain q) ty
         return res
     call (Log $ "LookupNameQuery: results are: " ++ show ans)
-    call (Yield q ans)
-    error "impossible: after Yield"
+    void $ call (Yield q ans)
 
 data FooQuery = FooQuery deriving (Eq, Show)
 

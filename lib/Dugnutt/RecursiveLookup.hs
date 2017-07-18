@@ -1,48 +1,47 @@
 {-# Language TypeFamilies #-}
 module Dugnutt.RecursiveLookup where
 
-import Control.Monad (mplus, when)
+import Control.Monad (mplus)
 import Data.ByteString.Char8 (unpack, pack)
 import Data.Monoid ( (<>) )
 import Data.IP
 import Data.List (groupBy, sort, sortBy, tails, intersperse)
 import Data.List.Split (splitOn)
 
-import Network.DNS as DNS
+import qualified Network.DNS as DNS
 
 import Dugnutt.Domain
 import Dugnutt.Query
 
-import Dugnutt.LookupNameQuery
-import Dugnutt.QuerySpecificAddress
+import qualified Dugnutt.QuerySpecificAddress as QSA
 
 data RecursiveLookup = RecursiveLookup {
-    domain :: Domain
-  , rrtype :: TYPE
+    domain :: DNS.Domain
+  , rrtype :: DNS.TYPE
   } deriving (Eq, Show)
 
 instance Query RecursiveLookup where
-  type Answer RecursiveLookup = Either DNSError [RData]
+  type Answer RecursiveLookup = Either DNS.DNSError [DNS.RData]
 
-  launch q@(RecursiveLookup domain rrtype) = do
-    call $ Log $ "RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") start"
+  launch q = do
+    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") start"
 
-    assertNormalised domain
+    assertNormalised (domain q)
 
-    possibleAncestorZone <- splitByZone domain
+    possibleAncestorZone <- splitByZone (domain q)
 
     assertNormalised possibleAncestorZone
 
-    call $ Log $ "RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") possible ancester zone: " ++ show possibleAncestorZone
+    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") possible ancester zone: " ++ show possibleAncestorZone
     nameserverHostname <- getNameserverForZone possibleAncestorZone
-    call $ Log $ "RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") possible ancester zone: " ++ show possibleAncestorZone ++ "  nameserver: " ++ show nameserverHostname
+    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") possible ancester zone: " ++ show possibleAncestorZone ++ "  nameserver: " ++ show nameserverHostname
 
     assertNormalised nameserverHostname
 
     nameserverAddress <- getAddressForHost nameserverHostname
-    call $ Log $ "RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") possible ancester zone: " ++ show possibleAncestorZone ++ "  nameserver: " ++ show nameserverHostname ++ "  nameserverAddress " ++ show nameserverAddress
+    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") possible ancester zone: " ++ show possibleAncestorZone ++ "  nameserver: " ++ show nameserverHostname ++ "  nameserverAddress " ++ show nameserverAddress
 
-    res <- call $ Launch (QuerySpecificAddress (show nameserverAddress) domain rrtype)
+    res <- call $ Launch (QSA.QuerySpecificAddress (show nameserverAddress) (domain q) (rrtype q))
 
     -- res is a raw message, which needs some processing. The Network.DNS lookup
     -- function takes only the answer section, and only records of the correct type
@@ -74,11 +73,11 @@ yieldRawMessage q@(RecursiveLookup domain rrtype) rawMsg = do
 -- A records...
 -- XXX so at this point, just implement proper shredding of the rawMsg...?
 
-yieldAnswer :: RecursiveLookup -> DNSMessage -> Action ()
+yieldAnswer :: RecursiveLookup -> DNS.DNSMessage -> Action ()
 yieldAnswer q@(RecursiveLookup domain rrtype) rawMsg = do
         let correct r = DNS.rrtype r == rrtype
-        let toRData = map rdata . filter correct . answer
-        let syntheticResult = fromDNSMessage rawMsg toRData
+        let toRData = map DNS.rdata . filter correct . DNS.answer
+        let syntheticResult = DNS.fromDNSMessage rawMsg toRData
         -- so we can yield the whole rrset/error now - this should not be
         -- unpacked into individual records because sometimes we should
         -- reason about the set as a whole.
@@ -88,24 +87,24 @@ yieldAnswer q@(RecursiveLookup domain rrtype) rawMsg = do
         call $ Yield q syntheticResultSorted
         return ()
 
-yieldAuthority :: RecursiveLookup -> DNSMessage -> Action ()
-yieldAuthority q rawMsg = yieldSection authority q rawMsg
+yieldAuthority :: RecursiveLookup -> DNS.DNSMessage -> Action ()
+yieldAuthority q rawMsg = yieldSection DNS.authority q rawMsg
 
-yieldAdditional :: RecursiveLookup -> DNSMessage -> Action ()
-yieldAdditional q rawMsg = yieldSection additional q rawMsg
+yieldAdditional :: RecursiveLookup -> DNS.DNSMessage -> Action ()
+yieldAdditional q rawMsg = yieldSection DNS.additional q rawMsg
 
-eqNameType :: ResourceRecord -> ResourceRecord -> Bool
+eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
 eqNameType a b = (DNS.rrname a == DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
 
-ordNameType :: ResourceRecord -> ResourceRecord -> Ordering
+ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
 ordNameType a b = compareOn DNS.rrname a b
                <> compareOn (DNS.typeToInt . DNS.rrtype) a b 
   where compareOn f a b = compare (f a) (f b)
 
-yieldSection :: (DNSMessage -> [ResourceRecord]) -> RecursiveLookup -> DNSMessage -> Action ()
+yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> RecursiveLookup -> DNS.DNSMessage -> Action ()
 yieldSection section q@(RecursiveLookup domain rrtype) rawMsg = do
   assertNormalised domain
-  let rrs = section rawMsg :: [ResourceRecord]
+  let rrs = section rawMsg :: [DNS.ResourceRecord]
 
   -- rrs might be a motley pool of different name/rrtypes
   -- group these into name,rrtype equivalence classes
@@ -126,7 +125,7 @@ yieldSection section q@(RecursiveLookup domain rrtype) rawMsg = do
 -- want to capture those NS values and use them.
 
 -- | this assumes the rrset is nonempty.
-resourceRecordsToQA :: [ResourceRecord] -> (RecursiveLookup, Answer RecursiveLookup)
+resourceRecordsToQA :: [DNS.ResourceRecord] -> (RecursiveLookup, Answer RecursiveLookup)
 resourceRecordsToQA rrset = let
   canonical = head rrset
   q = RecursiveLookup (DNS.rrname canonical) (DNS.rrtype canonical)
@@ -134,7 +133,7 @@ resourceRecordsToQA rrset = let
   in (q, a)
 
 
-splitByZone :: Domain -> Action Domain
+splitByZone :: DNS.Domain -> Action DNS.Domain
 splitByZone domain = do
   call $ Log $ "splitByZone: splitting zone: " ++ show domain
   let domainAsString = unpack domain
@@ -164,11 +163,11 @@ splitByZone domain = do
 
   return packed
 
-getNameserverForZone :: Domain -> Action Domain
+getNameserverForZone :: DNS.Domain -> Action DNS.Domain
 getNameserverForZone zoneName = do
   call $ Log $ "getNameserverForZone: zone " ++ show zoneName
   
-  resp <- call $ Launch $ RecursiveLookup zoneName NS
+  resp <- call $ Launch $ RecursiveLookup zoneName DNS.NS
   call $ Log $ "getNamserverForZone: response " ++ show resp
   case resp of
     Left _ -> call End -- this path won't give us a nameserver name
@@ -180,7 +179,7 @@ getNameserverForZone zoneName = do
   -- perhaps we should actually return error here, and then
   -- turn that into more generally the resolution failing?
   -- (but not killing dugnutt...)
-      (RD_NS ns_name) <- pick ns_rrset
+      (DNS.RD_NS ns_name) <- pick ns_rrset
 
       call $ Log $ "getNameserverForZone: zone " ++ show zoneName
                 ++ " has nameserver " ++ show ns_name 
@@ -188,18 +187,18 @@ getNameserverForZone zoneName = do
       return ns_name
 
 -- TODO: returns (non-deterministically) the A/AAAA records for the given zone
-getAddressForHost :: Domain -> Action IPv4
+getAddressForHost :: DNS.Domain -> Action IPv4
 getAddressForHost hostName = do
   assertNormalised hostName
   call $ Log $ "getAddressForHost: looking up address for host " 
             ++ show hostName
-  resp <- call $ Launch $ RecursiveLookup hostName A
+  resp <- call $ Launch $ RecursiveLookup hostName DNS.A
   case resp of 
     Left _ -> call End
     Right a_rrset -> do
       call $ Log $ "getAddressForHost: host " ++ show hostName
                 ++ " has A RRSet " ++ show a_rrset
-      (RD_A a) <- pick a_rrset
+      (DNS.RD_A a) <- pick a_rrset
 
       call $ Log $ "getAddressForHost: host " ++ show hostName
                 ++ " has address " ++ show a

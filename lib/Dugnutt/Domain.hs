@@ -5,7 +5,7 @@ import Network.DNS (Domain)
 
 import Dugnutt.Query
 
-import Data.ByteString.Char8 (pack, unpack)
+import Data.ByteString.Char8 (unpack)
 
 
 assertNormalised :: Domain -> Action ()
