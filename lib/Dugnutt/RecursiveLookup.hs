@@ -1,4 +1,5 @@
 {-# Language TypeFamilies #-}
+{-# OPTIONS_GHC -Werror #-}
 module Dugnutt.RecursiveLookup where
 
 import Control.Monad (mplus)
@@ -6,10 +7,10 @@ import Data.ByteString.Char8 (unpack, pack)
 import Data.Monoid ( (<>) )
 import Data.IP
 import Data.List (groupBy, sort, sortBy, tails, intersperse)
-import Data.List.Split (splitOn)
 
 import qualified Network.DNS as DNS
 
+import Dugnutt.Actions (pick)
 import Dugnutt.Domain
 import Dugnutt.Query
 
@@ -132,37 +133,6 @@ resourceRecordsToQA rrset = let
   a = Right $ sort $ map DNS.rdata rrset
   in (q, a)
 
-
-splitByZone :: DNS.Domain -> Action DNS.Domain
-splitByZone domain = do
-  call $ Log $ "splitByZone: splitting zone: " ++ show domain
-  let domainAsString = unpack domain
-
-  let parts = splitOn "." domainAsString
- 
-  call $ Log $ "splitByZone: parts: " ++ show parts
-
-  let ts = tails parts
-
-  call $ Log $ "splitByZone: tails: " ++ show ts
-
-  -- non-deterministically continue with one (all) of the
-  -- possible tails.
-  t <- pick ts
-  call $ Log $ "splitByZone: picked tail: " ++ show t
-
-  let reassembled = concat $ intersperse "." t
-
-  let reassembled' = if length reassembled == 0 || (head $ reverse reassembled) /= '.'
-                     then reassembled ++ "."
-                     else reassembled
- 
-  let packed = pack reassembled'
-
-  call $ Log $ "splitByZone: ancestor: " ++ show packed
-
-  return packed
-
 getNameserverForZone :: DNS.Domain -> Action DNS.Domain
 getNameserverForZone zoneName = do
   call $ Log $ "getNameserverForZone: zone " ++ show zoneName
@@ -203,17 +173,4 @@ getAddressForHost hostName = do
       call $ Log $ "getAddressForHost: host " ++ show hostName
                 ++ " has address " ++ show a
       return a
-
-pick :: Show a => [a] -> Action a
-pick [] = do
-  call $ Log $ "pick: empty list"
-  call End
-pick [x] = do
-  call $ Log $ "pick: singleton list: " ++ show x
-  return x
-pick (x:xs) = do
-  call $ Log $ "pick: between " ++ show x ++ " and " ++ show xs
-  choice <- call Fork
-  if choice then return x
-            else pick xs
 
