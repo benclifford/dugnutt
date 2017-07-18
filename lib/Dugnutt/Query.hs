@@ -257,6 +257,17 @@ data Next where
 data DBEntry where
   DBEntry :: Query q => q -> [Answer q] -> [Answer q -> Action Void] -> Bool -> DBEntry
 
+-- | Projects out the query from a database entry.
+--   Note that, depending on the return type, this
+--   might return Nothing - if the return type is
+--   not compatible with the type stored in the
+--   DBEntry
+--   TODO: can this be implemented as a regular record
+--   syntax accessor, or does the polymorphism break it?
+getQuery :: Query q => DBEntry -> Maybe q
+getQuery (DBEntry q' as cs l) = cast q'
+
+
 updateDBWithYield :: Query q => [DBEntry] -> q -> Answer q -> [DBEntry]
 updateDBWithYield db query answer = 
   updateDB db query [answer] [] False
@@ -272,7 +283,6 @@ updateDBWithLaunch db query =
 updateDB :: Query q => [DBEntry] -> q -> [Answer q] -> [Answer q -> Action Void] -> Bool -> [DBEntry]
 updateDB db query a k l = 
   let (these, others) = partition p db
-      getQuery (DBEntry q' as cs l) = cast q'
       p dbe = getQuery dbe == Just query
       these' = case these of
         [] -> [DBEntry query a k l]
@@ -296,7 +306,6 @@ instance Show DBEntry where
 
 findAnswers :: Query q => [DBEntry] -> q -> [Answer q]
 findAnswers db q = let
-     getQuery (DBEntry q' as cs l) = cast q'
      getAnswers (DBEntry q' as cs l) = fromMaybe
        (error "impossible: findAnswers cast failed")
        (cast as)
@@ -305,7 +314,6 @@ findAnswers db q = let
 
 findCallbacks :: Query q => [DBEntry] -> q -> [Answer q -> Action Void]
 findCallbacks db q = let
-     getQuery (DBEntry q' as cs l) = cast q'
      getCallbacks (DBEntry q' as cs l) = fromMaybe
        (error "impossible: findCallbacks cast failed")
        (cast cs)
@@ -314,7 +322,6 @@ findCallbacks db q = let
 
 isLaunched :: Query q => [DBEntry] -> q -> Bool
 isLaunched db q = let
-     getQuery (DBEntry q' as cs l) = cast q'
      getLaunched (DBEntry q' as cs l) = l
      p dbe = getQuery dbe == Just q
   in or $ map getLaunched $ filter p db
