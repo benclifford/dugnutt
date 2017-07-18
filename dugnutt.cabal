@@ -17,6 +17,7 @@ library
   hs-source-dirs:      lib
   exposed-modules:     Dugnutt
                      , Dugnutt.Domain
+                     , Dugnutt.FFree
                      , Dugnutt.LookupNameQuery
                      , Dugnutt.PopulateRootNameservers
                      , Dugnutt.Query
