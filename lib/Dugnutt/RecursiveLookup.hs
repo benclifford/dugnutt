@@ -156,7 +156,8 @@ getNameserverForZone zoneName = do
       assertNormalised ns_name
       return ns_name
 
--- TODO: returns (non-deterministically) the A/AAAA records for the given zone
+-- | Returns (non-deterministically) the A records for the given zone
+-- and TODO: should do AAAA records
 getAddressForHost :: DNS.Domain -> Action IPv4
 getAddressForHost hostName = do
   assertNormalised hostName
