@@ -6,6 +6,8 @@ module Dugnutt where
 import Dugnutt.PopulateRootNameservers
 import Dugnutt.Query
 
+import Control.Monad (void)
+
 initq :: Query q => q -> IO ()
 initq query = do
   putStrLn "initq: starting query"
@@ -36,7 +38,7 @@ initq query = do
   -- putStrLn $ "initq: database:"
   -- mapM_ printLn db'
   putStrLn $ "initq: final answers to query:"
-  print (findAnswers db' query)
+  void $ mapM printLn (findAnswers db' query)
 
 printLn :: Show v => v -> IO ()
 printLn = putStrLn . show
