@@ -6,8 +6,8 @@ module Dugnutt.QuerySpecificAddress where
 import Dugnutt.Domain
 import Dugnutt.Query
 
-import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
+import Data.Void (vacuous)
 import Network.DNS as DNS (DNSError, DNSMessage, Domain,
          FileOrNumericHost(..),
          lookupRaw,
@@ -29,7 +29,7 @@ data QuerySpecificAddress = QuerySpecificAddress {
 instance Query QuerySpecificAddress where
   type Answer QuerySpecificAddress = Either DNSError DNSMessage
 
-  launch q = do
+  launch q = vacuous $ do
     call $ Log $ "QuerySpecificAddress: querying "
       ++ show (nameserverAddr q) ++ " for "
       ++ show (domain q)++ "/" ++ show (rrtype q)
@@ -46,5 +46,4 @@ instance Query QuerySpecificAddress where
         DNS.lookupRaw resolver (domain q) (rrtype q)
 
     call $ Log $ "QuerySpecificAddress: " ++ show q ++ " => " ++ show rawMsg
-    void $ call $ Yield q rawMsg
-    return ()
+    call $ Yield q rawMsg

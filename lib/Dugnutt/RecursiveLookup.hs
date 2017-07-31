@@ -7,6 +7,7 @@ import Data.ByteString.Char8 (unpack, pack)
 import Data.Monoid ( (<>) )
 import Data.IP
 import Data.List (groupBy, sort, sortBy, tails, intersperse)
+import Data.Void (vacuous, Void)
 
 import qualified Network.DNS as DNS
 
@@ -54,16 +55,15 @@ instance Query RecursiveLookup where
     -- so as to preserve the fact that we did get some kind of answer of that
     -- specific query.
     case res of
-      Right rawMsg -> yieldRawMessage q rawMsg
-      Left err -> (call $ Yield q (Left err)) >> return ()
-    return () -- never reached because of Yield
+      Right rawMsg -> vacuous (yieldRawMessage q rawMsg)
+      Left err -> vacuous (call $ Yield q (Left err))
 
 
+yieldRawMessage :: RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldRawMessage q@(RecursiveLookup domain rrtype) rawMsg = do
   yieldAnswer q rawMsg
     `mplus` yieldAuthority q rawMsg
     `mplus` yieldAdditional q rawMsg
-  return ()
 
 -- most importantly for practical purposes this is needed to extract
 -- the NS AUTHORITY records which allow a delegation to take place,
@@ -74,7 +74,7 @@ yieldRawMessage q@(RecursiveLookup domain rrtype) rawMsg = do
 -- A records...
 -- XXX so at this point, just implement proper shredding of the rawMsg...?
 
-yieldAnswer :: RecursiveLookup -> DNS.DNSMessage -> Action ()
+yieldAnswer :: RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldAnswer q@(RecursiveLookup domain rrtype) rawMsg = do
         let correct r = DNS.rrtype r == rrtype
         let toRData = map DNS.rdata . filter correct . DNS.answer
@@ -86,12 +86,11 @@ yieldAnswer q@(RecursiveLookup domain rrtype) rawMsg = do
         let syntheticResultSorted = fmap sort syntheticResult
         call $ Log $ "yieldAnswer: RecursiveLookup(" ++ unpack domain ++ "/" ++ show rrtype ++ ") => " ++ show syntheticResultSorted
         call $ Yield q syntheticResultSorted
-        return ()
 
-yieldAuthority :: RecursiveLookup -> DNS.DNSMessage -> Action ()
+yieldAuthority :: RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldAuthority q rawMsg = yieldSection DNS.authority q rawMsg
 
-yieldAdditional :: RecursiveLookup -> DNS.DNSMessage -> Action ()
+yieldAdditional :: RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldAdditional q rawMsg = yieldSection DNS.additional q rawMsg
 
 eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
@@ -102,7 +101,7 @@ ordNameType a b = compareOn DNS.rrname a b
                <> compareOn (DNS.typeToInt . DNS.rrtype) a b 
   where compareOn f a b = compare (f a) (f b)
 
-yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> RecursiveLookup -> DNS.DNSMessage -> Action ()
+yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> RecursiveLookup -> DNS.DNSMessage -> Action Void
 yieldSection section q@(RecursiveLookup domain rrtype) rawMsg = do
   assertNormalised domain
   let rrs = section rawMsg :: [DNS.ResourceRecord]
@@ -119,7 +118,6 @@ yieldSection section q@(RecursiveLookup domain rrtype) rawMsg = do
   assertNormalised d1
   call $ Log $ "yieldSection: Yielding " ++ show q ++ " => " ++ show a
   call $ Yield q a
-  return ()
 -- TODO: handle when rawMsg is an error...
 -- we'd expect the data in the addition/authority sections to contain
 -- eg an NS that is the "proof" of non-existence? in which case we still
