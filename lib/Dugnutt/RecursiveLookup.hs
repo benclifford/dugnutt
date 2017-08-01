@@ -140,6 +140,24 @@ instance Query RecursiveLookupFromNameserver where
         -> vacuous  (call $ Yield q (Right []))
            `mplus` (vacuous $ yieldRawMessage rawMsg)
 
+      -- case 5 - CNAME: what comes back has the right rrname, but an
+      --          rrtype of CNAME. The top level resolution algorithm
+      --          should restart, looking up the new name and the
+      --          original rrtype.
+      --          For provenance (and other?) purposes, I'd like to
+      --          be able to observe this CNAME indirection later,
+      --          rather than it being invisible - for example, to
+      --          check that NS records are not pointing at CNAMEs.
+      --          This might necessitate another layer of query
+      --          processing functions.
+
+      Right rawMsg
+        | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr
+          && hasRelevantCNAME q rawMsg
+          && rrtype q /= DNS.CNAME
+        -> vacuous (yieldRawMessage rawMsg)
+           `mplus` recurseOnCNAME q rawMsg
+
       -- fail on all other situations, rather than guessing what is
       -- going on.
       Right other -> error $ "RecursiveLookup: cannot handle this response: " ++ show other
@@ -166,6 +184,43 @@ recurseOnNameservers q rawMsg = msum $
 
         terminate :: Action Void
         terminate = call End
+
+-- | Recursively calls RecursiveLookup on a CNAME that has been
+--   supplied as an answer.
+recurseOnCNAME q rawMsg = do
+
+  let rcnames = relevantCNAMEs q rawMsg
+  -- TODO: warn if not exactly one CNAME
+ 
+  let rcname_rdatas = DNS.rdata <$> rcnames
+
+  -- This should basically always be exactly one
+  -- choice, but if not, it'll do them all.
+  rcname_rdata <- pick rcname_rdatas
+
+  let (DNS.RD_CNAME newDomain) = rcname_rdata
+
+  let newQuery = RecursiveLookup {
+                   domain = newDomain
+                 , rrtype = rrtype q
+                 }
+  res <- call $ Launch newQuery
+
+  -- transcribe result from the recursed query into results for
+  -- the original query
+  vacuous (call $ Yield q res)
+
+-- | Does the raw message contain a CNAME answer to the supplied
+--   query?
+hasRelevantCNAME q rawMsg = let
+  as' = relevantCNAMEs q rawMsg
+  in (not . null) as'
+
+relevantCNAMEs q rawMsg = let
+    correctRR rr = DNS.rrname rr == (domain q)
+                && DNS.rrtype rr == DNS.CNAME 
+    as = DNS.answer rawMsg
+    in filter correctRR as
 
 -- | Does the raw message contain resource record answers that
 --   match the given query?
