@@ -27,7 +27,7 @@ main = do
 
 cliProgress :: String -> IO ()
 cliProgress msg = do
-  putStr $ "dugnutt cli: " ++ msg
+  putStrLn $ "dugnutt cli: " ++ msg
 
 readDomain :: String -> Domain
 readDomain s =
