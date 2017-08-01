@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -Werror #-}
 module Dugnutt.RecursiveLookup where
 
-import Control.Monad (mplus)
+import Control.Monad (mplus, msum)
 import Data.ByteString.Char8 (unpack, pack)
 import Data.Monoid ( (<>) )
 import Data.IP
@@ -30,18 +30,55 @@ instance Query RecursiveLookup where
 
     assertNormalised (domain q)
 
-    possibleAncestorZone <- splitByZone (domain q)
+    resolveFromRoot q `mplus` speculativeResolve q
 
-    assertNormalised possibleAncestorZone
+-- For now, resolveFromRoot and speculativeResolve are basically
+-- the same, but possibly later, stricter error handling will happen
+-- in resolveFromRoot.
 
-    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") possible ancester zone: " ++ show possibleAncestorZone
-    nameserverHostname <- getNameserverForZone possibleAncestorZone
-    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") possible ancester zone: " ++ show possibleAncestorZone ++ "  nameserver: " ++ show nameserverHostname
+resolveFromRoot :: RecursiveLookup -> Action ()
+resolveFromRoot q = do
+  -- To begin with, caches aside, all we know is that
+  -- the root is an ancestor (because it is an ancestor of all
+  -- names).
+  let ancestorZone = pack "."
+  assertNormalised ancestorZone
 
-    assertNormalised nameserverHostname
+  nameserverHostname <- getNameserverForZone ancestorZone
+  assertNormalised nameserverHostname
 
+  call $ Launch (RecursiveLookupFromNameserver q nameserverHostname)
+  return ()
+
+speculativeResolve :: RecursiveLookup -> Action ()
+speculativeResolve q = do
+  possibleAncestorZone <- splitByZone (domain q)
+  assertNormalised possibleAncestorZone
+
+  nameserverHostname <- getNameserverForZone possibleAncestorZone
+  assertNormalised nameserverHostname
+
+  call $ Launch (RecursiveLookupFromNameserver q nameserverHostname)
+
+  return ()
+
+-- | note that this never "returns" any answers (that is, yields
+--   for a RecursiveLookupFromNamserver query). That is possibly bad
+--   if we want to do anything using function syntax for such a call,
+--   or reason functionally.
+data RecursiveLookupFromNameserver = RecursiveLookupFromNameserver {
+    query :: RecursiveLookup,
+    nameserver :: DNS.Domain
+  } deriving (Eq, Show)
+
+instance Query RecursiveLookupFromNameserver where
+  type Answer RecursiveLookupFromNameserver = Either DNS.DNSError [DNS.RData]
+
+  launch q' = do
+    let q = query q'
+    let nameserverHostname = nameserver q'
     nameserverAddress <- getAddressForHost nameserverHostname
-    call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") possible ancester zone: " ++ show possibleAncestorZone ++ "  nameserver: " ++ show nameserverHostname ++ "  nameserverAddress " ++ show nameserverAddress
+    call $ Log $ "recursiveLookupFromNameserver(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") nameserver: " ++ show nameserverHostname ++ "  nameserverAddress " ++ show nameserverAddress
 
     res <- call $ Launch (QSA.QuerySpecificAddress (show nameserverAddress) (domain q) (rrtype q))
 
@@ -76,17 +113,24 @@ instance Query RecursiveLookup where
       -- need to pay attention to 'possibleAncestorZone'.
       -- TODO: also check that there are no SOAs in the authority section
       -- to be clear that it is not a denial of existence (see clause 6)
+      -- TODO: if delegated NSes are children of the zone, validate the
+      -- glue - that is, check that if there are in-zone NSes, that glue
+      -- is specified (and works - whatever that means) - so that we can
+      -- detect missing glue even if we've got cached records somehow.
+      -- This todo is probably pretty lowpri?
       Right rawMsg
         | (null . DNS.answer) rawMsg
           && hasReferralNS q rawMsg
           && (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr
-        -> vacuous $ yieldRawMessage rawMsg
+        -> (vacuous $ yieldRawMessage rawMsg)
+           `mplus` (vacuous $ recurseOnNameservers q rawMsg)
 
       -- case 1
       Left err -> vacuous (call $ Yield q (Left err))
 
       -- case 4
       Right rawMsg | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NameErr -> vacuous (call $ Yield q (Left DNS.NameError))
+        `mplus` (vacuous $ yieldRawMessage rawMsg)
 
       -- case 6 - a label exists, but there are no RRs of the specified type.
       Right rawMsg
@@ -94,10 +138,34 @@ instance Query RecursiveLookup where
           && (null . DNS.answer) rawMsg
           && hasAuthoritySOA rawMsg
         -> vacuous  (call $ Yield q (Right []))
+           `mplus` (vacuous $ yieldRawMessage rawMsg)
 
       -- fail on all other situations, rather than guessing what is
       -- going on.
       Right other -> error $ "RecursiveLookup: cannot handle this response: " ++ show other
+
+
+-- | Gets all the NSes from rawMessage, and recursively calls
+--   recursiveLookupFromNameserver
+recurseOnNameservers :: RecursiveLookup -> DNS.DNSMessage -> Action Void
+recurseOnNameservers q rawMsg = msum $
+           map
+             (\nsName -> (call $ Launch (RecursiveLookupFromNameserver q nsName)) >> terminate)
+             nsNames
+  where nsNames :: [DNS.Domain]
+        nsNames = (getNSes . filter correctRR . DNS.authority) rawMsg
+
+        correctRR :: DNS.ResourceRecord -> Bool
+        correctRR rr = DNS.rrtype rr == DNS.NS
+
+        getNSes :: [DNS.ResourceRecord] -> [DNS.Domain]
+        getNSes = map (getNS . DNS.rdata)
+
+        getNS :: DNS.RData -> DNS.Domain
+        getNS (DNS.RD_NS ns_name) = ns_name
+
+        terminate :: Action Void
+        terminate = call End
 
 -- | Does the raw message contain resource record answers that
 --   match the given query?
