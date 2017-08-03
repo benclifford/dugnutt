@@ -63,7 +63,7 @@ speculativeResolve q = do
   return ()
 
 -- | note that this never "returns" any answers (that is, yields
---   for a RecursiveLookupFromNamserver query). That is possibly bad
+--   for a RecursiveLookupFromNameserver query). That is possibly bad
 --   if we want to do anything using function syntax for such a call,
 --   or reason functionally.
 data RecursiveLookupFromNameserver = RecursiveLookupFromNameserver {
@@ -262,7 +262,7 @@ getNameserverForZone zoneName = do
   call $ Log $ "getNameserverForZone: zone " ++ show zoneName
   
   resp <- call $ Launch $ RecursiveLookup zoneName DNS.NS
-  call $ Log $ "getNamserverForZone: response " ++ show resp
+  call $ Log $ "getNameserverForZone: response " ++ show resp
   case resp of
     Left _ -> call End -- this path won't give us a nameserver name
     Right ns_rrset -> do 
