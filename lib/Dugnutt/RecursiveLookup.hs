@@ -67,7 +67,7 @@ instance Query RecursiveLookup where
       Right rawMsg
         | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr
           && rawMessageContainsAnswers q rawMsg
-        -> vacuous $ yieldRawMessage q rawMsg
+        -> vacuous $ yieldRawMessage rawMsg
 
       -- case 3: delegation
       -- Note that this does not check if the referral is a downward
@@ -80,7 +80,7 @@ instance Query RecursiveLookup where
         | (null . DNS.answer) rawMsg
           && hasReferralNS q rawMsg
           && (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr
-        -> vacuous $ yieldRawMessage q rawMsg
+        -> vacuous $ yieldRawMessage rawMsg
 
       -- case 1
       Left err -> vacuous (call $ Yield q (Left err))
@@ -137,20 +137,20 @@ hasAuthoritySOA rawMsg = let
 
 -- | This will yield all RRsets found in answer, authority and
 --   additional sections, regardless of which query was asked.
-yieldRawMessage :: RecursiveLookup -> DNS.DNSMessage -> Action Void
-yieldRawMessage q@(RecursiveLookup domain rrtype) rawMsg = do
-  yieldAnswer q rawMsg
-    `mplus` yieldAuthority q rawMsg
-    `mplus` yieldAdditional q rawMsg
+yieldRawMessage :: DNS.DNSMessage -> Action Void
+yieldRawMessage rawMsg = do
+  yieldAnswer rawMsg
+    `mplus` yieldAuthority rawMsg
+    `mplus` yieldAdditional rawMsg
 
-yieldAnswer :: RecursiveLookup -> DNS.DNSMessage -> Action Void
-yieldAnswer q rawMsg = yieldSection DNS.answer q rawMsg
+yieldAnswer :: DNS.DNSMessage -> Action Void
+yieldAnswer rawMsg = yieldSection DNS.answer rawMsg
 
-yieldAuthority :: RecursiveLookup -> DNS.DNSMessage -> Action Void
-yieldAuthority q rawMsg = yieldSection DNS.authority q rawMsg
+yieldAuthority :: DNS.DNSMessage -> Action Void
+yieldAuthority rawMsg = yieldSection DNS.authority rawMsg
 
-yieldAdditional :: RecursiveLookup -> DNS.DNSMessage -> Action Void
-yieldAdditional q rawMsg = yieldSection DNS.additional q rawMsg
+yieldAdditional :: DNS.DNSMessage -> Action Void
+yieldAdditional rawMsg = yieldSection DNS.additional rawMsg
 
 eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
 eqNameType a b = (DNS.rrname a == DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
@@ -160,9 +160,8 @@ ordNameType a b = compareOn DNS.rrname a b
                <> compareOn (DNS.typeToInt . DNS.rrtype) a b 
   where compareOn f a b = compare (f a) (f b)
 
-yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> RecursiveLookup -> DNS.DNSMessage -> Action Void
-yieldSection section q@(RecursiveLookup domain rrtype) rawMsg = do
-  assertNormalised domain
+yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> DNS.DNSMessage -> Action Void
+yieldSection section rawMsg = do
   let rrs = section rawMsg :: [DNS.ResourceRecord]
 
   -- rrs might be a motley pool of different name/rrtypes
