@@ -4,6 +4,9 @@ module Dugnutt.RecursiveLookup where
 
 import Control.Monad (mplus, msum)
 import Data.ByteString.Char8 (unpack, pack)
+import qualified Data.ByteString.Char8 as BS8
+import Data.Char (toUpper)
+import Data.Function (on)
 import Data.Monoid ( (<>) )
 import Data.IP
 import Data.List (groupBy, sort, sortBy, tails, intersperse)
@@ -217,7 +220,7 @@ hasRelevantCNAME q rawMsg = let
   in (not . null) as'
 
 relevantCNAMEs q rawMsg = let
-    correctRR rr = DNS.rrname rr == (domain q)
+    correctRR rr = DNS.rrname rr `eqDNSNormalised` (domain q)
                 && DNS.rrtype rr == DNS.CNAME 
     as = DNS.answer rawMsg
     in filter correctRR as
@@ -226,7 +229,7 @@ relevantCNAMEs q rawMsg = let
 --   match the given query?
 rawMessageContainsAnswers q rawMsg = let
 
-  correctName rr = DNS.rrname rr == domain q
+  correctName rr = DNS.rrname rr `eqDNSNormalised` domain q
   correctRR rr = DNS.rrtype rr == rrtype q
 
   -- as will contain the answer resource records which may
@@ -276,12 +279,21 @@ yieldAdditional :: DNS.DNSMessage -> Action Void
 yieldAdditional rawMsg = yieldSection DNS.additional rawMsg
 
 eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
-eqNameType a b = (DNS.rrname a == DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
+eqNameType a b = (DNS.rrname a `eqDNSNormalised` DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
 
 ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
-ordNameType a b = compareOn DNS.rrname a b
+ordNameType a b = compareOn (dnsNormalise . DNS.rrname) a b
                <> compareOn (DNS.typeToInt . DNS.rrtype) a b 
   where compareOn f a b = compare (f a) (f b)
+
+eqDNSNormalised :: DNS.Domain -> DNS.Domain -> Bool
+eqDNSNormalised = (==) `on` dnsNormalise
+
+-- | Normalises the case of domain to upper case. This relies on
+--   Data.Char.toUpper performing this in the way required by
+--   DNS standards.
+dnsNormalise :: DNS.Domain -> DNS.Domain
+dnsNormalise = BS8.map toUpper
 
 yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> DNS.DNSMessage -> Action Void
 yieldSection section rawMsg = do
