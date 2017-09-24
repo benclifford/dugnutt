@@ -17,29 +17,29 @@ import Data.ByteString.Char8 (pack, unpack)
 import Data.List (tails, intersperse)
 import Data.List.Split (splitOn)
 
-assertNormalised :: Domain -> Action ()
-assertNormalised domain = do
+assertDotNormalised :: Domain -> Action ()
+assertDotNormalised domain = do
   when (((head . reverse . unpack) domain) /= '.') $ error "ASSERTION FAILURE in assertNormalised"
   return ()
 
 eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
-eqNameType a b = (DNS.rrname a `eqDNSNormalised` DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
+eqNameType a b = (DNS.rrname a `eqDNSCaseNormalised` DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
 
 ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
-ordNameType a b = (compare `on` (dnsNormalise . DNS.rrname)) a b
+ordNameType a b = (compare `on` (dnsCaseNormalise . DNS.rrname)) a b
                <> (compare `on` (DNS.typeToInt . DNS.rrtype)) a b 
 
 -- | Compares assuming domain name is case-normalised,
 --   but not dot-normalised as used in assertNormalised.
 --   TODO put 'case' or 'dot' prefix on every use of normalise(d)
-eqDNSNormalised :: DNS.Domain -> DNS.Domain -> Bool
-eqDNSNormalised = (==) `on` dnsNormalise
+eqDNSCaseNormalised :: DNS.Domain -> DNS.Domain -> Bool
+eqDNSCaseNormalised = (==) `on` dnsCaseNormalise
 
 -- | Normalises the case of domain to upper case. This relies on
 --   Data.Char.toUpper performing this in the way required by
 --   DNS standards.
-dnsNormalise :: DNS.Domain -> DNS.Domain
-dnsNormalise = BS8.map toUpper
+dnsCaseNormalise :: DNS.Domain -> DNS.Domain
+dnsCaseNormalise = BS8.map toUpper
 
 
 splitByZone :: Domain -> Action Domain

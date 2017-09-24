@@ -33,7 +33,7 @@ instance Query QuerySpecificAddress where
     call $ Log $ "QuerySpecificAddress: querying "
       ++ show (nameserverAddr q) ++ " for "
       ++ show (domain q)++ "/" ++ show (rrtype q)
-    assertNormalised (domain q)
+    assertDotNormalised (domain q)
     let conf = ResolvConf {
             resolvInfo = RCHostName (nameserverAddr q)
           , resolvRetry = 10

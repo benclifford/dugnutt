@@ -27,7 +27,7 @@ instance Query RecursiveLookup where
   launch q = do
     call $ Log $ "RecursiveLookup(" ++ unpack (domain q) ++ "/" ++ show (rrtype q) ++ ") start"
 
-    assertNormalised (domain q)
+    assertDotNormalised (domain q)
 
     resolveFromRoot q `mplus` speculativeResolve q
 
@@ -41,10 +41,10 @@ resolveFromRoot q = do
   -- the root is an ancestor (because it is an ancestor of all
   -- names).
   let ancestorZone = pack "."
-  assertNormalised ancestorZone
+  assertDotNormalised ancestorZone
 
   nameserverHostname <- getNameserverForZone ancestorZone
-  assertNormalised nameserverHostname
+  assertDotNormalised nameserverHostname
 
   call $ Launch (RecursiveLookupFromNameserver q nameserverHostname)
   return ()
@@ -52,10 +52,10 @@ resolveFromRoot q = do
 speculativeResolve :: RecursiveLookup -> Action ()
 speculativeResolve q = do
   possibleAncestorZone <- splitByZone (domain q)
-  assertNormalised possibleAncestorZone
+  assertDotNormalised possibleAncestorZone
 
   nameserverHostname <- getNameserverForZone possibleAncestorZone
-  assertNormalised nameserverHostname
+  assertDotNormalised nameserverHostname
 
   call $ Launch (RecursiveLookupFromNameserver q nameserverHostname)
 
@@ -216,7 +216,7 @@ hasRelevantCNAME q rawMsg = let
   in (not . null) as'
 
 relevantCNAMEs q rawMsg = let
-    correctRR rr = DNS.rrname rr `eqDNSNormalised` (domain q)
+    correctRR rr = DNS.rrname rr `eqDNSCaseNormalised` (domain q)
                 && DNS.rrtype rr == DNS.CNAME 
     as = DNS.answer rawMsg
     in filter correctRR as
@@ -225,7 +225,7 @@ relevantCNAMEs q rawMsg = let
 --   match the given query?
 rawMessageContainsAnswers q rawMsg = let
 
-  correctName rr = DNS.rrname rr `eqDNSNormalised` domain q
+  correctName rr = DNS.rrname rr `eqDNSCaseNormalised` domain q
   correctRR rr = DNS.rrtype rr == rrtype q
 
   -- as will contain the answer resource records which may
@@ -287,7 +287,7 @@ yieldSection section rawMsg = do
 
   (q, a) <- pick $ map (resourceRecordsToQA) rrEquivalenceClasses
   let (RecursiveLookup d1 _) = q
-  assertNormalised d1
+  assertDotNormalised d1
   call $ Log $ "yieldSection: Yielding " ++ show q ++ " => " ++ show a
   call $ Yield q a
 -- TODO: handle when rawMsg is an error...
@@ -324,14 +324,14 @@ getNameserverForZone zoneName = do
 
       call $ Log $ "getNameserverForZone: zone " ++ show zoneName
                 ++ " has nameserver " ++ show ns_name 
-      assertNormalised ns_name
+      assertDotNormalised ns_name
       return ns_name
 
 -- | Returns (non-deterministically) the A records for the given zone
 -- and TODO: should do AAAA records
 getAddressForHost :: DNS.Domain -> Action IPv4
 getAddressForHost hostName = do
-  assertNormalised hostName
+  assertDotNormalised hostName
   call $ Log $ "getAddressForHost: looking up address for host " 
             ++ show hostName
   resp <- call $ Launch $ RecursiveLookup hostName DNS.A
