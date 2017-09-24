@@ -317,6 +317,7 @@ yieldSection section rawMsg = do
 
 -- | this assumes the rrset is nonempty.
 resourceRecordsToQA :: [DNS.ResourceRecord] -> (RecursiveLookup, Answer RecursiveLookup)
+resourceRecordsToQA [] = error "resourceRecordsToQA called with empty RRset"
 resourceRecordsToQA rrset = let
   canonical = head rrset
   q = RecursiveLookup (DNS.rrname canonical) (DNS.rrtype canonical)
