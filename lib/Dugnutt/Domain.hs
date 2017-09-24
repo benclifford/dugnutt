@@ -3,7 +3,12 @@
 module Dugnutt.Domain where
 
 import Control.Monad (when)
+import qualified Data.ByteString.Char8 as BS8
+import Data.Char (toUpper)
+import Data.Function (on)
+import Data.Monoid ( (<>) )
 import Network.DNS (Domain)
+import qualified Network.DNS as DNS
 
 import Dugnutt.Actions
 import Dugnutt.Query
@@ -16,6 +21,25 @@ assertNormalised :: Domain -> Action ()
 assertNormalised domain = do
   when (((head . reverse . unpack) domain) /= '.') $ error "ASSERTION FAILURE in assertNormalised"
   return ()
+
+eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
+eqNameType a b = (DNS.rrname a `eqDNSNormalised` DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
+
+ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
+ordNameType a b = (compare `on` (dnsNormalise . DNS.rrname)) a b
+               <> (compare `on` (DNS.typeToInt . DNS.rrtype)) a b 
+
+-- | Compares assuming domain name is case-normalised,
+--   but not dot-normalised as used in assertNormalised.
+--   TODO put 'case' or 'dot' prefix on every use of normalise(d)
+eqDNSNormalised :: DNS.Domain -> DNS.Domain -> Bool
+eqDNSNormalised = (==) `on` dnsNormalise
+
+-- | Normalises the case of domain to upper case. This relies on
+--   Data.Char.toUpper performing this in the way required by
+--   DNS standards.
+dnsNormalise :: DNS.Domain -> DNS.Domain
+dnsNormalise = BS8.map toUpper
 
 
 splitByZone :: Domain -> Action Domain

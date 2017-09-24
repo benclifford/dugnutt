@@ -4,10 +4,6 @@ module Dugnutt.RecursiveLookup where
 
 import Control.Monad (mplus, msum)
 import Data.ByteString.Char8 (unpack, pack)
-import qualified Data.ByteString.Char8 as BS8
-import Data.Char (toUpper)
-import Data.Function (on)
-import Data.Monoid ( (<>) )
 import Data.IP
 import Data.List (groupBy, sort, sortBy, tails, intersperse)
 import Data.Void (vacuous, Void)
@@ -277,22 +273,6 @@ yieldAuthority rawMsg = yieldSection DNS.authority rawMsg
 
 yieldAdditional :: DNS.DNSMessage -> Action Void
 yieldAdditional rawMsg = yieldSection DNS.additional rawMsg
-
-eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
-eqNameType a b = (DNS.rrname a `eqDNSNormalised` DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
-
-ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
-ordNameType a b = (compare `on` (dnsNormalise . DNS.rrname)) a b
-               <> (compare `on` (DNS.typeToInt . DNS.rrtype)) a b 
-
-eqDNSNormalised :: DNS.Domain -> DNS.Domain -> Bool
-eqDNSNormalised = (==) `on` dnsNormalise
-
--- | Normalises the case of domain to upper case. This relies on
---   Data.Char.toUpper performing this in the way required by
---   DNS standards.
-dnsNormalise :: DNS.Domain -> DNS.Domain
-dnsNormalise = BS8.map toUpper
 
 yieldSection :: (DNS.DNSMessage -> [DNS.ResourceRecord]) -> DNS.DNSMessage -> Action Void
 yieldSection section rawMsg = do
