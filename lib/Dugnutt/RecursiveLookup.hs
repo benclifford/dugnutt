@@ -264,10 +264,10 @@ hasAuthoritySOA rawMsg = let
 -- | This will yield all RRsets found in answer, authority and
 --   additional sections, regardless of which query was asked.
 yieldRawMessage :: DNS.DNSMessage -> Action Void
-yieldRawMessage rawMsg = do
-  yieldAnswer rawMsg
-    `mplus` yieldAuthority rawMsg
-    `mplus` yieldAdditional rawMsg
+yieldRawMessage rawMsg =
+          yieldAnswer rawMsg
+  `mplus` yieldAuthority rawMsg
+  `mplus` yieldAdditional rawMsg
 
 yieldAnswer :: DNS.DNSMessage -> Action Void
 yieldAnswer rawMsg = yieldSection DNS.answer rawMsg
