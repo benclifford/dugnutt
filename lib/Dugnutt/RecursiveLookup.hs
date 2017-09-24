@@ -282,9 +282,8 @@ eqNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Bool
 eqNameType a b = (DNS.rrname a `eqDNSNormalised` DNS.rrname b) && (DNS.rrtype a == DNS.rrtype b)
 
 ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
-ordNameType a b = compareOn (dnsNormalise . DNS.rrname) a b
-               <> compareOn (DNS.typeToInt . DNS.rrtype) a b 
-  where compareOn f a b = compare (f a) (f b)
+ordNameType a b = (compare `on` (dnsNormalise . DNS.rrname)) a b
+               <> (compare `on` (DNS.typeToInt . DNS.rrtype)) a b 
 
 eqDNSNormalised :: DNS.Domain -> DNS.Domain -> Bool
 eqDNSNormalised = (==) `on` dnsNormalise
