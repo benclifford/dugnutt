@@ -18,7 +18,7 @@ main = do
 
   args@[domainS, typeS] <- getArgs
 
-  let domain = readDomain domainS
+  let domain = stringToDotNormalisedDomain domainS
   let ty = read typeS
 
   let query = RecursiveLookup domain ty
@@ -29,8 +29,8 @@ cliProgress :: String -> IO ()
 cliProgress msg = do
   putStrLn $ "dugnutt cli: " ++ msg
 
-readDomain :: String -> Domain
-readDomain s =
+stringToDotNormalisedDomain :: String -> Domain
+stringToDotNormalisedDomain s =
   if "." `isSuffixOf` s
     then pack s
     else pack (s ++ ".")
