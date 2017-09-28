@@ -1,5 +1,3 @@
-{-# Language OverloadedStrings #-}
-
 module Main where
 
 import Data.ByteString.Char8 (pack)
