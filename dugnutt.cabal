@@ -41,6 +41,7 @@ executable dugnutt
                      , bytestring
                      , dns
                      , dugnutt
+                     , optparse-applicative
   default-language:    Haskell2010
 
 test-suite dugnutt-test
