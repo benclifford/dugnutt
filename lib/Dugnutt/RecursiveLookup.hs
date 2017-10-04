@@ -93,7 +93,11 @@ instance Query RecursiveLookupFromNameserver where
     --   and there is an AUTHORITY of NSes and ADDITIONAL data for NS As. (www.hawaga.org.uk for example); 
     --   5b. sometimes neither (www.1stmerrow.org.uk for example) - I'm not sure why?
     --   5c. With 'merrowscouts.hawaga.org.uk', a delegation into another zone but that is served from the same server, the onwards biscay.cqx.ltd.uk record is added to the ANSWER section, and the AUTHORITY section contains NS records for cqx.ltd.uk and the ADDITIONAL section contains A records for those NSes.
-    --   6. an indication that a label exists but has no RRs of the specified type. eg paella.hawaga.org.uk/RP: status NOERROR, nothing in ANSWER section, authority section contains SOA for the containing zone. This latter clause is how to tell it apart from a delegation, I think, and we should check that the authority contains no NS RRs to extra clear about separating cases 3 and 6.
+
+    --   6. an indication that a label exists but has no RRs of the specified type. eg paella.hawaga.org.uk/RP: status NOERROR, nothing in ANSWER section.
+    --    Sometimes the authority section contains SOA for the containing zone, but not always. Distinct from case 3, a delegation, where the
+    --    authority section contains NS RRs.
+
     -- There are two different ways that this could be handled at a higher level: one that the RR set is empty (which means in places where I care, for the purposes of non-determinism, about checking whether an rrset is empty or not so as to treat it like a NameError, those checks need to be explicit). The second is to treat the error like a NameError (or something similar). 
     --   7. when we requested an ANY, what comes back in the 2. case is a bunch of resource records of assorted types, rather than an "ANY" type. A simple list of [RData] is insufficient for representing this. Maybe it shouldn't be allowed at this level? (although artificially generated to get more results)
 
@@ -132,10 +136,14 @@ instance Query RecursiveLookupFromNameserver where
         `mplus` (vacuous $ yieldRawMessage rawMsg)
 
       -- case 6 - a label exists, but there are no RRs of the specified type.
+      -- Previously I thought there would always be an SOA
+      -- in this case, but it is not always so.
+      --   so this guard:   && hasAuthoritySOA rawMsg
+      --   was removed.
       Right rawMsg
         | (DNS.rcode . DNS.flags . DNS.header) rawMsg == DNS.NoErr 
           && (null . DNS.answer) rawMsg
-          && hasAuthoritySOA rawMsg
+          && not (hasReferralNS q rawMsg)
         -> vacuous  (call $ Yield q (Right []))
            `mplus` (vacuous $ yieldRawMessage rawMsg)
 
