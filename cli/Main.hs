@@ -10,6 +10,8 @@ import Dugnutt (initq)
 
 import Dugnutt.RecursiveLookup (RecursiveLookup (..))
 
+import Dugnutt.RRText
+
 import Network.DNS (Domain, TYPE (..))
 
 main :: IO ()
@@ -47,5 +49,5 @@ domainOpt :: OA.Parser Domain
 domainOpt = stringToDotNormalisedDomain <$> OA.strArgument (OA.metavar "DOMAIN")
 
 typeOpt :: OA.Parser TYPE
-typeOpt = read <$> OA.strArgument (OA.metavar "TYPE")
+typeOpt = readTYPE <$> OA.strArgument (OA.metavar "TYPE")
 

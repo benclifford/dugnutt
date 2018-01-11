@@ -9,6 +9,7 @@ import Dugnutt.Query
 import Control.Monad.IO.Class (liftIO)
 import Data.Void (vacuous)
 import Network.DNS as DNS (DNSError, DNSMessage, Domain,
+         defaultResolvConf,
          FileOrNumericHost(..),
          lookupRaw,
          makeResolvSeed,
@@ -34,11 +35,10 @@ instance Query QuerySpecificAddress where
       ++ show (nameserverAddr q) ++ " for "
       ++ show (domain q)++ "/" ++ show (rrtype q)
     assertDotNormalised (domain q)
-    let conf = ResolvConf {
+    let conf = DNS.defaultResolvConf {
             resolvInfo = RCHostName (nameserverAddr q)
           , resolvRetry = 10
           , resolvTimeout = 6000000
-          , resolvBufsize = error "resolveBufsize should not be used"
           }
     rawMsg <- liftIO $ do
       seed <- makeResolvSeed conf

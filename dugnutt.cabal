@@ -24,6 +24,7 @@ library
                      , Dugnutt.Query
                      , Dugnutt.QuerySpecificAddress
                      , Dugnutt.RecursiveLookup
+                     , Dugnutt.RRText
 
   build-depends:       base >= 4.7 && < 5
                      , bytestring

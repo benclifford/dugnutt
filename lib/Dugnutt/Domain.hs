@@ -9,6 +9,7 @@ import Data.Function (on)
 import Data.Monoid ( (<>) )
 import Network.DNS (Domain)
 import qualified Network.DNS as DNS
+-- import qualified Network.DNS.Types as DNS (fromType_)
 
 import Dugnutt.Actions
 import Dugnutt.Query
@@ -27,7 +28,7 @@ eqNameType a b = (DNS.rrname a `eqDNSCaseNormalised` DNS.rrname b) && (DNS.rrtyp
 
 ordNameType :: DNS.ResourceRecord -> DNS.ResourceRecord -> Ordering
 ordNameType a b = (compare `on` (dnsCaseNormalise . DNS.rrname)) a b
-               <> (compare `on` (DNS.typeToInt . DNS.rrtype)) a b 
+               <> (compare `on` (DNS.fromTYPE . DNS.rrtype)) a b 
 
 -- | Compares assuming domain name is case-normalised,
 --   but not dot-normalised as used in assertNormalised.
