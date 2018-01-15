@@ -4,7 +4,6 @@ import Data.ByteString.Char8 (pack)
 import Data.List (isSuffixOf)
 import Data.Monoid (mempty)
 import qualified Options.Applicative as OA
-import System.Environment (getArgs)
 
 import Dugnutt (initq)
 
