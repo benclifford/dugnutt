@@ -1,16 +1,22 @@
 {-# Language OverloadedStrings #-}
+{-# Language FlexibleInstances #-}
+{-# Language FlexibleContexts #-}
+
 {-# Options_GHC -Wall -Werror #-}
 
 module Dugnutt where
 
+import Dugnutt.Loggable
 import Dugnutt.PopulateRootNameservers
 import Dugnutt.Query
 
-import Control.Monad (void)
+import Control.Monad (void, when)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ask, ReaderT, runReaderT)
 
-initq :: Query q => q -> IO ()
-initq query = do
-  putStrLn "initq: starting query"
+initq :: Query q => Bool -> q -> IO ()
+initq verbose query = do
+  when verbose $ putStrLn "initq: starting query"
 
   -- We can meaningfully drive multiple queries in a row
   -- sharing the db between them: sharing the db means
@@ -32,13 +38,35 @@ initq query = do
   -- rather than a work queue, we have separate invocations of
   -- drive, but the database is passed on in the same fashion.
 
-  db <- drive [] query
-  db' <- drive db PopulateRootNameservers
-  putStrLn $ "initq: finished"
-  -- putStrLn $ "initq: database:"
-  -- mapM_ printLn db'
-  putStrLn $ "initq: final answers to query:"
-  void $ mapM printLn (findAnswers db' query)
+  -- TODO: these two drive invocations should happen in a custom
+  -- environment rather
+  -- than IO, so that they get custom log implementation that drive
+  -- does not need to be aware of.
+
+  let loggingEnvironment = LoggingEnvironment {
+        _verbose = verbose
+      }
+
+  finalDb <- (flip runReaderT) loggingEnvironment $ do
+    db <- drive [] query
+    db' <- drive db PopulateRootNameservers
+    return db'
+
+  when verbose $ putStrLn $ "initq: finished"
+  when verbose $ putStrLn $ "initq: final answers to query:"
+  void $ mapM printLn (findAnswers finalDb query)
+
+data LoggingEnvironment = LoggingEnvironment {
+    _verbose :: Bool
+  }
+
+type ConfigurableLogger = ReaderT LoggingEnvironment IO
+
+instance Loggable ConfigurableLogger where
+  logMsg s = do
+    config <- ask
+    when (_verbose config) $ liftIO $ putStrLn s
+
 
 printLn :: Show v => v -> IO ()
 printLn = putStrLn . show
