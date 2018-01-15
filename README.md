@@ -23,3 +23,11 @@ https://github.com/mandatoryprogrammer/trusttrees
 
 dnstrace searches for all DNS servers that can affect the resolution of records of type t under the domain name fqdn, starting from the root server r.
 https://cr.yp.to/djbdns/debugging.html
+
+dnswalk
+https://github.com/davebarr/dnswalk
+
+Domain Obscenity Control
+
+FYI27 - Tools for DNS debugging (1994)
+https://tools.ietf.org/html/fyi27
