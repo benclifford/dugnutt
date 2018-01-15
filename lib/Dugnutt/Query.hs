@@ -11,10 +11,12 @@
 module Dugnutt.Query where
 
 import Dugnutt.FFree
+import Dugnutt.Loggable
 
 import Control.Applicative (Alternative(..))
 import Control.Monad (MonadPlus(..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Reader
 import Data.List (sortBy, groupBy, partition)
 import Data.Typeable (Typeable, cast)
 import Data.Void
@@ -86,12 +88,12 @@ call cmd = Impure cmd pure
 -- to deal with (which might be launches or might be new results)
 -- Initially, new results (from Yield) are what I need to implement.
 
-runAction :: MonadIO m => Action v -> m [Next]
+runAction :: (Loggable m, MonadIO m) => Action v -> m [Next]
 runAction (Pure _) = return [] -- discard the result. and there are
                                -- no more actions to perform.
 
 runAction (Impure (Log msg) k) = do
-  liftIO $ putStrLn $ "; " ++ msg
+  logMsg $ "; " ++ msg
   runAction $ k ()
 
 runAction (Impure (LiftIO a) k) = do
@@ -124,13 +126,13 @@ runAction (Impure End _k) = do
 
 -- | drive something (an Action?) until there are no
 --   nexts left to do.
-drive :: (MonadIO m, Query q) => [DBEntry] -> q -> m [DBEntry]
+drive :: (Loggable m, MonadIO m, Query q) => [DBEntry] -> q -> m [DBEntry]
 drive db query = do
   traceInterpreter $ "drive: Driving " ++ show query
   driveIter [L query] db
 
 
-driveIter :: (MonadIO m) => [Next] -> [DBEntry] -> m [DBEntry]
+driveIter :: (Loggable m, MonadIO m) => [Next] -> [DBEntry] -> m [DBEntry]
 driveIter todo@[] db = do
   printStats todo db
   traceInterpreter $ "driveIter: STEP: all done with database size " ++ (show . length) db
@@ -330,24 +332,22 @@ countAnswers db = let
 printStats :: (MonadIO m) => [Next] -> [DBEntry] -> m ()
 printStats _nexts _db = return ()
 
-printStats' :: (MonadIO m) => [Next] -> [DBEntry] -> m ()
-printStats' nexts db = liftIO $ do
-  putStr "; *** "
-  putStr $ (show . length) nexts
-  putStr " steps to do. "
-  putStr $ (show . length) db
-  putStr " entries in database: "
-  putStr $ (show . countLaunched) db
-  putStr " queries launched, "
-  putStr $ (show . countCallbacks) db
-  putStr " callbacks registered, "
-  putStr $ (show . countAnswers) db
-  putStr " answers known."
+printStats' :: (Loggable m) => [Next] -> [DBEntry] -> m ()
+printStats' nexts db = logMsg $ 
+     "; *** "
+  ++ (show . length) nexts
+  ++ " steps to do. "
+  ++ (show . length) db
+  ++ " entries in database: "
+  ++ (show . countLaunched) db
+  ++ " queries launched, "
+  ++ (show . countCallbacks) db
+  ++ " callbacks registered, "
+  ++ (show . countAnswers) db
+  ++ " answers known. ***"
  
-  putStrLn "***"
-
-traceInterpreter :: MonadIO m => String -> m ()
-traceInterpreter s = (liftIO . putStrLn) s
+traceInterpreter :: Loggable m => String -> m ()
+traceInterpreter s = logMsg s
 
 -- | given a database, return a new database that
 --   contains the same data, but hopefully better

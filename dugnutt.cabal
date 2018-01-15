@@ -19,6 +19,7 @@ library
                      , Dugnutt.Actions
                      , Dugnutt.Domain
                      , Dugnutt.FFree
+                     , Dugnutt.Loggable
                      , Dugnutt.LookupNameQuery
                      , Dugnutt.PopulateRootNameservers
                      , Dugnutt.Query
@@ -30,6 +31,7 @@ library
                      , bytestring
                      , dns
                      , iproute
+                     , mtl
                      , network
                      , split
   default-language:    Haskell2010
