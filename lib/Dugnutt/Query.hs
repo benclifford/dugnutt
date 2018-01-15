@@ -86,16 +86,16 @@ call cmd = Impure cmd pure
 -- to deal with (which might be launches or might be new results)
 -- Initially, new results (from Yield) are what I need to implement.
 
-runAction :: Action v -> IO [Next]
+runAction :: MonadIO m => Action v -> m [Next]
 runAction (Pure _) = return [] -- discard the result. and there are
                                -- no more actions to perform.
 
 runAction (Impure (Log msg) k) = do
-  putStrLn $ "; " ++ msg
+  liftIO $ putStrLn $ "; " ++ msg
   runAction $ k ()
 
 runAction (Impure (LiftIO a) k) = do
-  v <- a
+  v <- liftIO a
   runAction $ k v
 
 runAction (Impure (Yield q a) _k) = do
@@ -124,13 +124,13 @@ runAction (Impure End _k) = do
 
 -- | drive something (an Action?) until there are no
 --   nexts left to do.
-drive :: Query q => [DBEntry] -> q -> IO [DBEntry]
+drive :: (MonadIO m, Query q) => [DBEntry] -> q -> m [DBEntry]
 drive db query = do
   traceInterpreter $ "drive: Driving " ++ show query
   driveIter [L query] db
 
 
-driveIter :: [Next] -> [DBEntry] -> IO [DBEntry]
+driveIter :: (MonadIO m) => [Next] -> [DBEntry] -> m [DBEntry]
 driveIter todo@[] db = do
   printStats todo db
   traceInterpreter $ "driveIter: STEP: all done with database size " ++ (show . length) db
@@ -327,11 +327,11 @@ countAnswers db = let
 -- | optionally print stats at some points, although current
 --   implementation does nothing - this is a programmer time
 --   verbosity choice. TODO: make this runtime choosable
-printStats :: [Next] -> [DBEntry] -> IO ()
+printStats :: (MonadIO m) => [Next] -> [DBEntry] -> m ()
 printStats _nexts _db = return ()
 
-printStats' :: [Next] -> [DBEntry] -> IO ()
-printStats' nexts db = do
+printStats' :: (MonadIO m) => [Next] -> [DBEntry] -> m ()
+printStats' nexts db = liftIO $ do
   putStr "; *** "
   putStr $ (show . length) nexts
   putStr " steps to do. "
@@ -346,8 +346,8 @@ printStats' nexts db = do
  
   putStrLn "***"
 
-traceInterpreter :: String -> IO ()
-traceInterpreter s = putStrLn s
+traceInterpreter :: MonadIO m => String -> m ()
+traceInterpreter s = (liftIO . putStrLn) s
 
 -- | given a database, return a new database that
 --   contains the same data, but hopefully better
