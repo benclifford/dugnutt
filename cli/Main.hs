@@ -16,7 +16,7 @@ import Network.DNS (Domain, TYPE (..))
 
 main :: IO ()
 main = do
-  cliProgress "dugnutt is copyright 2017 Ben Clifford"
+  cliProgress "dugnutt is copyright 2017-2018 Ben Clifford"
 
   os <- OA.execParser opts
 
