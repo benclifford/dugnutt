@@ -10,11 +10,11 @@ import Dugnutt.Loggable
 import Dugnutt.PopulateRootNameservers
 import Dugnutt.Query
 
-import Control.Monad (void, when)
+import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask, ReaderT, runReaderT)
 
-initq :: Query q => Bool -> q -> IO ()
+initq :: Query q => Bool -> q -> IO [Answer q]
 initq verbose query = do
   when verbose $ putStrLn "initq: starting query"
 
@@ -52,9 +52,12 @@ initq verbose query = do
     db' <- drive db PopulateRootNameservers
     return db'
 
-  when verbose $ putStrLn $ "initq: finished"
-  when verbose $ putStrLn $ "initq: final answers to query:"
-  void $ mapM printLn (findAnswers finalDb query)
+  let answers = findAnswers finalDb query
+
+  when verbose $ do
+    putStrLn $ "initq: finished"
+
+  pure answers
 
 data LoggingEnvironment = LoggingEnvironment {
     _verbose :: Bool
@@ -67,6 +70,3 @@ instance Loggable ConfigurableLogger where
     config <- ask
     when (_verbose config) $ liftIO $ putStrLn s
 
-
-printLn :: Show v => v -> IO ()
-printLn = putStrLn . show

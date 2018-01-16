@@ -1,6 +1,6 @@
 module Main where
 
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Data.ByteString.Char8 (pack)
 import Data.List (isSuffixOf)
 import Data.Monoid (mempty)
@@ -20,7 +20,10 @@ main = do
   os <- OA.execParser opts
   cliProgress os "dugnutt is copyright 2017-2018 Ben Clifford"
   let query = RecursiveLookup (_domain os) (_type os)
-  initq (_verbose os) query
+  answers <- initq (_verbose os) query
+
+  void $ mapM printLn answers
+
   cliProgress os "finished"
 
 cliProgress :: DugnuttCLIOpts -> String -> IO ()
@@ -32,6 +35,11 @@ stringToDotNormalisedDomain s =
   if "." `isSuffixOf` s
     then pack s
     else pack (s ++ ".")
+
+
+printLn :: Show v => v -> IO ()
+printLn = putStrLn . show
+
 
 opts :: OA.ParserInfo DugnuttCLIOpts
 opts = OA.info optParser mempty
