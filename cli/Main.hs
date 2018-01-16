@@ -24,6 +24,9 @@ main = do
 
   void $ mapM printLn answers
 
+  when (length answers /= 1 && _checkUnique os) $
+    error "Results are not unique"
+
   cliProgress os "finished"
 
 cliProgress :: DugnuttCLIOpts -> String -> IO ()
@@ -48,10 +51,11 @@ data DugnuttCLIOpts = DugnuttCLIOpts {
     _domain :: Domain
   , _type :: TYPE
   , _verbose :: Bool
+  , _checkUnique :: Bool
   }
 
 optParser :: OA.Parser DugnuttCLIOpts
-optParser =  DugnuttCLIOpts <$> domainOpt <*> typeOpt <*> verboseOpt
+optParser =  DugnuttCLIOpts <$> domainOpt <*> typeOpt <*> verboseOpt <*> checkUniqueOpt
 
 domainOpt :: OA.Parser Domain
 domainOpt = stringToDotNormalisedDomain <$> OA.strArgument (OA.metavar "DOMAIN")
@@ -62,3 +66,5 @@ typeOpt = readTYPE <$> OA.strArgument (OA.metavar "TYPE")
 verboseOpt :: OA.Parser Bool
 verboseOpt = OA.switch (OA.long "verbose")
 
+checkUniqueOpt :: OA.Parser Bool
+checkUniqueOpt = OA.switch (OA.long "check-unique")
