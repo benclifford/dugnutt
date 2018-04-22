@@ -1,0 +1,168 @@
+A use-case driven set of features that would be
+useful to have.
+
+or, cases to misconfigure and test,
+and decide what output I expect.
+
+1.
+problem:
+x.org has two name servers, ns1.x.org and ns2.x.org
+the glue A for ns2 points to a different old server.
+but authoritative info on all three servers is correct.
+
+
+2.
+problem:
+NXDOMAIN is (incorrectly) issued by a parent. see
+a&a reverse DNS custom server for ipv6. asking for the
+whole delegation works. asking for a partial delegation
+does not - we get an authoritative denial that the
+subtree exists.
+
+request PTR for a full ipv6 address, output should
+be two RRsets: an authoritative denial of existence,
+and the correct result.
+
+3. problem:
+x.org has two nameservers, one does not respond (i.e.
+hangs, or perhaps servfails?)
+
+output: the usual DNS algorithm will always end up
+with an answer, but in 50% of the queries, it will
+hit the broken one first, possibly resulting in a 
+timeout, if hanging.
+
+so I'd like to know the output, but also get
+some kind of diagnostic that the result set encounterd
+"warnings" (not "errors") on the way to getting it.
+
+that's an annotation on the "stack trace" (if such a thing
+exists?)
+
+4. stack trace style inspection of how we got a final
+result / ability to discover provenance of a result.
+
+result X will be the direct result of a query Q... but
+Q is just the query i fed in at the command line. I'd
+like some meaningful information about how the execution
+of Q acted as it did.
+
+Imagine if we wrote out the resolution process in a
+linear form as if we were running the rfc1034/1035
+algorithm... the forking to loop up an NS name is the
+main bit where this becomes non-linear.
+
+5. In addition to step 3 giving "warnings", I'd like the
+top level algorithm to report that all servers in a
+particular RRset of NSes failed - because that is an
+"error", not a "warning". But if any of the NSes *did*
+respond, I don't want to issue an error - I want to
+return the (non-deterministic) values that I go.
+
+This might need some kind of non-determinism
+introspection:   "run this block of code non-deterministically
+but let me see all the results" - which is potentially
+quite tangly wrt interaction with "a result can appear
+at any time" non-determinism.
+
+Might not need any new primitives, though: just for
+every element in list, run a query and accumulate the
+results, and that accumulation will be handled by the
+existing non-det mechanism?
+
+6. parallel DNS query resolution.
+
+To run much faster - bulk of execution time (especially with
+slow to respond servers) is spent waiting for a response
+from remote servers.
+
+Can raw query execution "commute" arbitrarily? I think so
+but am not entirely convinced. If so, I think this
+is pretty straightforward, as long as the launch queue
+gets more than 1 query in it at once.
+
+eg make a special launch class (either a new Launch command,
+or a specific query type) that is run asynchronously and the
+results absorbed in at an appropriate time - eg when we've
+run out of queued tasks, dequeue an async queue of io results?
+(more generally though perhaps not necessary, figure out how
+separate runs work in parallel with exchanging of information - 
+eg can there be two threads working through half of the task
+queue each? if so, how do their results get absorbed? can we
+apply results in any arbitrary order and so accumulate all the
+results from a run and merge periodically?)
+
+This should not change the output.
+
+7. nagios warning if:
+lookups have any timing/error warnings
+lookups are inconsistent - i.e. initial query returns more than 1 rrset
+
+this shouldn't need nagios specific core warning support.
+
+8. multiple (related) queries should be able to share the same
+database so that if I do two related nagios queries, for example,
+they don't need to look up everything twice - also so that if they
+might "interfere" with each other factwise, that fact is detected.
+
+9. when there are labels that are not a zone cut (so querying for NS
+for a particular truncated domain won't give a delegation because there
+isn't a zone cut there), this should still work.
+
+10. if A delegates only to NSes in B, and delegates only to NSes in A,
+then this configuration cannot work - A and B cannot contain glue
+addresses, but there is no other way to bootstrap either zone.
+This needs to be properly detected and reported. (it might not be if
+something else comes along such as a differently configured
+non-det parent server gives a glue for A or B, making it seem like
+resolution does not have errors).
+
+11. c.f. https://github.com/insomniacslk/nsidenumerator/blob/master/nsidenumerator.py
+This uses multiple queries to the same IP address with different source
+ports to attempt to get multi path routing to kick in and observe different
+equal-cost (co-located?) anycast servers to answer. In the case of nsidenumerator,
+this is to request NSID.
+This is another source of non-determinism in query responses (that to debug, would
+possibly helpfully have NSID turned on in queries, but would still help
+pinpoint trouble without)
+
+12. my home relish router at least does not return an A record for je.
+even though such exists when querying je. top level servers directly
+and querying 8.8.8.8. This difference should be detected (it is, I think,
+a bug in relish router?)
+
+13. a delegation delegates to a server which returns an empty NS rrset
+    (or fails) - this should be detected rather than ignored.
+
+
+14. draft-fujiwara-dnsop-nsec-aggressiveuse uses NSEC aggressively to 
+discover negative respoinses without needing an explicit NXDOMAIN - instead
+if we have a suitably cached nsec covering that we can cache that.
+we dont' need to *check* dnssec validity to use this - just need to make
+sure we are getting some appropriate NSEC records.
+This is a different use case than others because we are looking for
+names that *don't* exist. Or at least making sure that NSEC records around
+them are consistent. For example, query for a nearby name and hope we get an
+NSEC that covers this.
+
+15. https://tools.ietf.org/html/draft-vixie-dnsext-resimprove-00
+contains some interesting thoughts on cache management which it might be
+interesting to consider in light of what is going on here.
+(eg NXDOMAIN on a node means that all children don't exist now, but
+might not have always meant that)
+
+16. problem:
+
+bind9 in some cases can return an A record *and* a CNAME: thanks <sthen>.
+   i) configure bind9 as recursive resolver
+  ii) serve some.foo A 1.2.3.4 from elsewhere
+ iii) resolve some.foo/A via bind9
+  iv) cache now contains some.foo A 1.2.3.4
+   v) change some.foo to CNAME x.y
+  vi) resolve some.foo/TXT via bind9 (anything but A, so as to force a new lookup)
+   v) CNAME comes back
+  vi) cache now contains valid A and valid CNAME and both will be returned by bind9
+      when querying for some.foo/A, I think (or maybe some.foo/ANY)
+
+This situation should be noted as surprising if it appears in an RRset. But both
+CNAME and A record paths should be followed here.
