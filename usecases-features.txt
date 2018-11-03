@@ -166,3 +166,11 @@ bind9 in some cases can return an A record *and* a CNAME: thanks <sthen>.
 
 This situation should be noted as surprising if it appears in an RRset. But both
 CNAME and A record paths should be followed here.
+
+17. DNS-over-HTTP resolver
+
+18. RIPE Atlas resolver
+
+19. https://en.wikipedia.org/wiki/Forward-confirmed_reverse_DNS
+
+Do this on every PTR. Also interesting to do it the other way round?
