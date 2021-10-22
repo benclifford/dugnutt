@@ -11,7 +11,7 @@ import Dugnutt.RecursiveLookup (RecursiveLookup (..))
 
 import Dugnutt.RRText
 
-import Network.DNS (Domain, TYPE (..))
+import Network.DNS (Domain, TYPE (..), DNSError, RData)
 
 main :: IO ()
 main = do
@@ -21,12 +21,24 @@ main = do
   let query = RecursiveLookup (_domain os) (_type os)
   answers <- initq (_verbose os) query
 
-  void $ mapM printLn answers
+  putStrLn $ "There are " ++ (show . length) answers ++ " results:"
+  void $ mapM printAnswer (answers `zip` [1..])
 
   when (length answers /= 1 && _checkUnique os) $
     error "Results are not unique"
 
   cliProgress os "finished"
+
+
+printAnswer :: (Either DNSError [RData], Int) -> IO ()
+printAnswer (answer, n) = do
+  putStrLn $ "Result " ++ (show n) ++ ": "
+  case answer of
+    Right good -> do putStrLn "Good answer:"
+                     print good
+    Left bad -> do putStrLn "Error:"
+                   print bad
+  putStrLn "---"
 
 cliProgress :: DugnuttCLIOpts -> String -> IO ()
 cliProgress os msg = do
