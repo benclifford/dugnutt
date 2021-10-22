@@ -141,7 +141,7 @@ driveIter todo@[] db = do
 
 driveIter todo@((L query):ns) db = do
   printStats todo db
-  traceInterpreter $ "driveIter: STEP: Request to launching a query: " ++ show query
+  traceInterpreter $ "driveIter: STEP: Request to launch a query: " ++ show query
   if not (isLaunched db query)
     then do
       traceInterpreter "driveIter: Query has not been previously launched. Launching now."
