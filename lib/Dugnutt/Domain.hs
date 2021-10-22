@@ -6,7 +6,6 @@ import Control.Monad (when)
 import qualified Data.ByteString.Char8 as BS8
 import Data.Char (toUpper)
 import Data.Function (on)
-import Data.Monoid ( (<>) )
 import Network.DNS (Domain)
 import qualified Network.DNS as DNS
 -- import qualified Network.DNS.Types as DNS (fromType_)

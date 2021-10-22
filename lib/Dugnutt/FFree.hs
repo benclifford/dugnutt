@@ -31,4 +31,5 @@ instance Monad (FFree f) where
   Pure v >>= rest = rest v
   (Impure cmd k') >>= k = Impure cmd (\v -> ((k' v) >>= k))
 
-
+instance MonadFail (FFree f) where
+  fail str = error ("MonadFail not implemented for FFree: " ++ str)
