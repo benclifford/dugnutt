@@ -164,7 +164,7 @@ driveIter todo@((L query):ns) db = do
 -- either by the previous Yield, or by the 'C' callback.
 driveIter todo@((Y query answer):ns) db = do
   printStats todo db
-  traceInterpreter "driveIter: STEP: yield/Y"
+  traceInterpreter "driveIter: STEP: yield"
 
   if not (isAlreadyKnown db query answer)
     then do 
@@ -196,7 +196,7 @@ driveIter todo@((Y query answer):ns) db = do
 --        answers are Yielded.
 driveIter todo@((C q k):ns) db = do
   printStats todo db
-  traceInterpreter "driveIter: STEP: callback/C"
+  traceInterpreter "driveIter: STEP: callback"
   traceInterpreter $ "driveIter: adding callback for " ++ (show q)
 
   let anss = findAnswers db q
